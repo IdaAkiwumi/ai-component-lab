@@ -172,4 +172,4 @@ This project demonstrates:
 * [Donate via PayPal](https://www.paypal.com/paypalme/iakiwumi)
 
 Developed by Ida Akiwumi
-Creative Technologist | Frontend Engineer | AI Integration Specialist
+*Creative Technologist | Frontend Engineer | AI Integration Specialist
