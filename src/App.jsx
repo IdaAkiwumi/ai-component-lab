@@ -3,19 +3,41 @@ import PromptPanel from './components/PromptPanel'
 import PreviewPanel from './components/PreviewPanel'
 import SessionHistory from './components/SessionHistory'
 
-// Only models confirmed to follow "return HTML only" without adding explanation text
-// Ordered by daily request limit: most generous first
 const MODELS = [
-  'llama-3.1-8b-instant',                       // 14,400 RPD
-  'llama-3.3-70b-versatile',                     // 1,000 RPD — better quality
-  'meta-llama/llama-4-scout-17b-16e-instruct',  // 1,000 RPD — best quality
-  'qwen/qwen3-32b',                              // 1,000 RPD — strong at code
-  'openai/gpt-oss-20b',                          // 1,000 RPD
-  'openai/gpt-oss-120b',                         // 1,000 RPD — highest quality fallback
+  'llama-3.1-8b-instant',
+  'llama-3.3-70b-versatile',
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+  'qwen/qwen3-32b',
+  'openai/gpt-oss-20b',
+  'openai/gpt-oss-120b',
 ]
 
-// Strips markdown fences and thinking tags that models sometimes add
-// despite being told not to
+// llama-3.1-8b-instant hard limits
+// TPM = 6,000 tokens/minute (input + output combined)
+// We leave a 500-token safety buffer → skip this model if estimated total > 5,500 tokens
+// Rough conversion: 1 token ≈ 4 characters
+const SMALL_MODEL_TOKEN_LIMIT = 5500
+const CHARS_PER_TOKEN = 4
+
+function estimateTokens(text) {
+  return Math.ceil(text.length / CHARS_PER_TOKEN)
+}
+
+// Returns true when a 400 response is specifically a token/context size rejection
+// so we can skip to the next model instead of surfacing it as a user-facing error
+function isRequestTooLarge(status, message) {
+  if (status !== 400) return false
+  const lower = (message || '').toLowerCase()
+  return (
+    lower.includes('too large') ||
+    lower.includes('tokens per minute') ||
+    lower.includes('context length') ||
+    lower.includes('reduce your message') ||
+    lower.includes('max_tokens') ||
+    (lower.includes('token') && lower.includes('limit'))
+  )
+}
+
 export function cleanCode(raw) {
   if (!raw) return ''
   return raw
@@ -26,8 +48,6 @@ export function cleanCode(raw) {
     .trim()
 }
 
-// Post-processing layer — catches anything the model adds that violates our rules
-// even when the system prompt is ignored under rate limit fallback conditions
 export function sanitizeOutput(code, prompt) {
   if (!code) return code
   const lower = prompt.toLowerCase()
@@ -40,49 +60,31 @@ export function sanitizeOutput(code, prompt) {
   )
 
   if (!wantsStars) {
-    // Remove all star characters when not requested
     code = code.replace(/[★☆⭐🌟]/g, '')
     code = code.replace(/<span[^>]*>\s*<\/span>/g, '')
   } else {
-    // Stars WERE requested — fix common model mistakes
-
-    // Fix 1: Replace ^ chevron characters that models use instead of ★
-    // Only inside elements that look like star containers to avoid breaking JS/CSS
     code = code.replace(
       /(<(?:span|div|i)[^>]*class="[^"]*star[^"]*"[^>]*>)\s*\^\s*(<\/)/gi,
       '\$1★\$2'
     )
-
-    // Fix 2: If the model used CSS ::before with chevron content, 
-    // replace the content value with the actual star character
     code = code.replace(
       /content:\s*["'][\^›»❯>]+["']/gi,
       'content: "★"'
     )
-
-    // Fix 3: Ensure any .star-row or .stars container is horizontal
-    // Inject a style block fix after any existing star styles
     if (code.includes('star-row') || code.includes('class="stars"')) {
       const starFix = `<style>
   .star-row, .stars, [class*="star-row"], [class*="star-container"] {
-    display: flex !important;
-    flex-direction: row !important;
-    flex-wrap: nowrap !important;
-    align-items: center !important;
-    gap: 3px !important;
+    display: flex !important; flex-direction: row !important;
+    flex-wrap: nowrap !important; align-items: center !important; gap: 3px !important;
   }
   .star, .star-filled, .star-empty, [class*="star-icon"] {
-    display: inline-block !important;
-    font-size: 20px !important;
-    line-height: 1 !important;
+    display: inline-block !important; font-size: 20px !important; line-height: 1 !important;
   }
 </style>`
-      // Insert right before the first <div to ensure it loads early
-      code = code.replace(/(<div)/, `${starFix}\n\$1`)
+      code = code.replace(/(<div|<section|<main|<article|<svg)/, `${starFix}\n\$1`)
     }
   }
 
-  // Remove decorative emojis unless specifically requested
   const wantsEmoji = (
     lower.includes('emoji') ||
     lower.includes('icon') ||
@@ -92,13 +94,12 @@ export function sanitizeOutput(code, prompt) {
     lower.includes('badge')
   )
   if (!wantsEmoji) {
-    code = code.replace(/[🚀💎🔒⚡✨🎯🏆💡🔥👑🎨🛡️⚙️📊💰🌐]/gu, '')
+    code = code.replace(/[🚀💎🔒⚡✨🎯🏆💡🔥👑🎨🛡️⚙️📊💰🌐🔮⬛✩⛤🚫]/gu, '')
   }
 
   return code
 }
 
-// Validates that the model actually returned HTML and not explanation prose
 function isValidHTML(code) {
   const t = code.trim()
   return (
@@ -108,7 +109,8 @@ function isValidHTML(code) {
       t.includes('<style')   ||
       t.includes('<section') ||
       t.includes('<article') ||
-      t.includes('<main')
+      t.includes('<main')    ||
+      t.includes('<svg')
     )
   )
 }
@@ -160,6 +162,286 @@ function isGlassRequest(prompt) {
   )
 }
 
+function isVisualizationRequest(prompt) {
+  const lower = prompt.toLowerCase()
+  return (
+    lower.includes('chart') ||
+    lower.includes('wheel') ||
+    lower.includes('birth chart') ||
+    lower.includes('natal chart') ||
+    lower.includes('astro') ||
+    lower.includes('zodiac') ||
+    lower.includes('horoscope') ||
+    lower.includes('pie') ||
+    lower.includes('donut') ||
+    lower.includes('gauge') ||
+    lower.includes('dial') ||
+    lower.includes('radar') ||
+    lower.includes('graph') ||
+    lower.includes('diagram')
+  )
+}
+
+function isImageRequest(prompt) {
+  const lower = prompt.toLowerCase()
+  return (
+    lower.includes('photo') ||
+    lower.includes('image') ||
+    lower.includes('hero image') ||
+    lower.includes('hero photo') ||
+    lower.includes('picture') ||
+    lower.includes('thumbnail') ||
+    lower.includes('cover') ||
+    lower.includes('banner')
+  )
+}
+
+function isBirthChartRequest(prompt) {
+  const lower = prompt.toLowerCase()
+  return (
+    lower.includes('birth chart') ||
+    lower.includes('natal chart') ||
+    lower.includes('astrological birth') ||
+    lower.includes('zodiac wheel') ||
+    (lower.includes('rising sign') && lower.includes('house')) ||
+    (lower.includes('ascendant') && lower.includes('midheaven'))
+  )
+}
+
+// ─── Local Birth Chart Renderer ──────────────────────────────────────────────
+// Parses the planet/sign/degree data from the prompt and builds a proper
+// SVG wheel entirely in JavaScript — no API call needed, no token limits.
+
+function extractBirthChartData(prompt) {
+  const signBaseDegs = {
+    aries: 0, taurus: 30, gemini: 60, cancer: 90, leo: 120, virgo: 150,
+    libra: 180, scorpio: 210, sagittarius: 240, capricorn: 270, aquarius: 300, pisces: 330,
+  }
+  const planetGlyphs = {
+    'Sun': '☉', 'Moon': '☽', 'Mercury': '☿', 'Venus': '♀', 'Mars': '♂',
+    'Jupiter': '♃', 'Saturn': '♄', 'Uranus': '♅', 'Neptune': '♆', 'Pluto': '♇',
+    'North Node': '☊', 'Lilith': '⚸', 'Ceres': '⚳', 'Chiron': '⚷',
+    'Pallas Athena': '⚴', 'Juno': '⚵', 'Vesta': '⚶',
+    'Pholus': '⊕', 'Eros': '♡', 'Psyche': 'Ψ',
+    'Ascendant': 'AC', 'Rising Sign': 'AC', 'Midheaven': 'MC',
+  }
+  const signGlyphs = {
+    Aries:'♈', Taurus:'♉', Gemini:'♊', Cancer:'♋', Leo:'♌', Virgo:'♍',
+    Libra:'♎', Scorpio:'♏', Sagittarius:'♐', Capricorn:'♑', Aquarius:'♒', Pisces:'♓',
+  }
+
+  const placements = []
+  const lines = prompt.split('\n').map(l =>
+    l.replace(/\*\*/g, '').replace(/[★☆⭐🌟🔮⬛✩⛤🚫]/gu, '').trim()
+  ).filter(Boolean)
+
+  const signNames = Object.keys(signBaseDegs).join('|')
+  const re = new RegExp(
+    `^([A-Za-z ()]+?):\\s*(?:[^A-Za-z]*)?\\s*(${signNames})\\s+(\\d{1,3})°(?:(\\d{1,2})')?`,
+    'i'
+  )
+
+  for (const line of lines) {
+    const m = line.match(re)
+    if (!m) continue
+    let name = m[1].trim().replace(/\s*\(R\)\s*/gi, '').replace(/\s*\(AC\)\s*/gi, '').trim()
+    if (name.toLowerCase().startsWith('rising sign')) name = 'Ascendant'
+    if (name.toLowerCase().startsWith('midheaven')) name = 'Midheaven'
+    const sign = m[2][0].toUpperCase() + m[2].slice(1).toLowerCase()
+    const deg = parseInt(m[3], 10)
+    const min = parseInt(m[4] || '0', 10)
+    const absolute = (signBaseDegs[sign.toLowerCase()] || 0) + deg + min / 60
+    placements.push({
+      name,
+      sign,
+      glyph: planetGlyphs[name] || signGlyphs[sign] || '•',
+      absolute,
+      label: `${deg}°${String(min).padStart(2, '0')}'`,
+    })
+  }
+  return placements
+}
+
+function buildBirthChartHTML(prompt) {
+  const placements = extractBirthChartData(prompt)
+
+  const cx = 260, cy = 260
+  const R_OUTER = 240, R_ZODIAC_INNER = 198
+  const R_HOUSE_INNER = 158, R_INNER = 118
+
+  const polar = (deg, r) => {
+    const rad = (deg - 90) * Math.PI / 180
+    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) }
+  }
+
+  const arcPath = (a1, a2, outerR, innerR) => {
+    const p1 = polar(a1, outerR), p2 = polar(a2, outerR)
+    const p3 = polar(a2, innerR), p4 = polar(a1, innerR)
+    const lg = (a2 - a1 > 180) ? 1 : 0
+    return [
+      `M ${p1.x.toFixed(2)} ${p1.y.toFixed(2)}`,
+      `A ${outerR} ${outerR} 0 ${lg} 1 ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`,
+      `L ${p3.x.toFixed(2)} ${p3.y.toFixed(2)}`,
+      `A ${innerR} ${innerR} 0 ${lg} 0 ${p4.x.toFixed(2)} ${p4.y.toFixed(2)}`,
+      'Z'
+    ].join(' ')
+  }
+
+  const zodiac = [
+    { name:'Aries',       glyph:'♈', start:0 },
+    { name:'Taurus',      glyph:'♉', start:30 },
+    { name:'Gemini',      glyph:'♊', start:60 },
+    { name:'Cancer',      glyph:'♋', start:90 },
+    { name:'Leo',         glyph:'♌', start:120 },
+    { name:'Virgo',       glyph:'♍', start:150 },
+    { name:'Libra',       glyph:'♎', start:180 },
+    { name:'Scorpio',     glyph:'♏', start:210 },
+    { name:'Sagittarius', glyph:'♐', start:240 },
+    { name:'Capricorn',   glyph:'♑', start:270 },
+    { name:'Aquarius',    glyph:'♒', start:300 },
+    { name:'Pisces',      glyph:'♓', start:330 },
+  ]
+
+  const elementColors = {
+    Aries:'#3b1a1a', Taurus:'#1a2e1a', Gemini:'#1a1a3b', Cancer:'#1a2a2e',
+    Leo:'#2e1a0a', Virgo:'#1a2a1a', Libra:'#2a1a2e', Scorpio:'#1a0a0a',
+    Sagittarius:'#2e1a0a', Capricorn:'#1a1a1a', Aquarius:'#0a1a2e', Pisces:'#0a1a2a',
+  }
+
+  const zodiacSegments = zodiac.map((z, i) => {
+    const fill = elementColors[z.name] || (i % 2 === 0 ? '#1e1b4b' : '#0f172a')
+    const d = arcPath(z.start, z.start + 30, R_OUTER, R_ZODIAC_INNER)
+    const mid = polar(z.start + 15, (R_OUTER + R_ZODIAC_INNER) / 2)
+    return `<path d="${d}" fill="${fill}" stroke="rgba(255,255,255,0.18)" stroke-width="1"/>
+    <text x="${mid.x.toFixed(2)}" y="${mid.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="#e2e8f0" font-size="20">${z.glyph}</text>`
+  }).join('\n')
+
+  const houseSegments = Array.from({ length: 12 }, (_, i) => {
+    const start = i * 30
+    const d = arcPath(start, start + 30, R_ZODIAC_INNER, R_HOUSE_INNER)
+    const mid = polar(start + 15, (R_ZODIAC_INNER + R_HOUSE_INNER) / 2)
+    const divLine = polar(start, R_ZODIAC_INNER)
+    const divLineInner = polar(start, R_HOUSE_INNER)
+    return `<path d="${d}" fill="${i % 2 === 0 ? '#0c1222' : '#0a0f1c'}" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+    <line x1="${divLine.x.toFixed(2)}" y1="${divLine.y.toFixed(2)}" x2="${divLineInner.x.toFixed(2)}" y2="${divLineInner.y.toFixed(2)}" stroke="rgba(255,255,255,0.35)" stroke-width="1.5"/>
+    <text x="${mid.x.toFixed(2)}" y="${mid.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="#94a3b8" font-size="12">${i + 1}</text>`
+  }).join('\n')
+
+  const ticks = Array.from({ length: 72 }, (_, i) => {
+    const deg = i * 5
+    const isMajor = deg % 30 === 0
+    const r1 = polar(deg, R_OUTER - 2)
+    const r2 = polar(deg, R_OUTER - (isMajor ? 10 : 5))
+    return `<line x1="${r1.x.toFixed(2)}" y1="${r1.y.toFixed(2)}" x2="${r2.x.toFixed(2)}" y2="${r2.y.toFixed(2)}" stroke="rgba(255,255,255,${isMajor ? 0.6 : 0.25})" stroke-width="${isMajor ? 1.5 : 0.8}"/>`
+  }).join('\n')
+
+  // Spread overlapping planets
+  const sorted = [...placements].sort((a, b) => a.absolute - b.absolute)
+  const spread = []
+  for (const p of sorted) {
+    let angle = p.absolute
+    if (spread.length > 0) {
+      const prev = spread[spread.length - 1].displayAngle
+      if (Math.abs(angle - prev) < 8) angle = prev + 8
+    }
+    spread.push({ ...p, displayAngle: angle })
+  }
+
+  const planetMarks = spread.map((p) => {
+    const tickOuter = polar(p.absolute, R_HOUSE_INNER - 2)
+    const tickInner = polar(p.absolute, R_HOUSE_INNER - 12)
+    const pos = polar(p.displayAngle, R_INNER + 18)
+    return `<line x1="${tickOuter.x.toFixed(2)}" y1="${tickOuter.y.toFixed(2)}" x2="${tickInner.x.toFixed(2)}" y2="${tickInner.y.toFixed(2)}" stroke="#94a3b8" stroke-width="1"/>
+    <circle cx="${pos.x.toFixed(2)}" cy="${pos.y.toFixed(2)}" r="13" fill="#0f172a" stroke="rgba(148,163,184,0.5)" stroke-width="1"/>
+    <text x="${pos.x.toFixed(2)}" y="${(pos.y + 0.5).toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="#f1f5f9" font-size="12">${p.glyph}</text>`
+  }).join('\n')
+
+  // Major aspect lines between first 8 bodies
+  const aspectBodies = spread.filter(p =>
+    ['Sun','Moon','Mercury','Venus','Mars','Jupiter','Saturn','Ascendant'].includes(p.name)
+  )
+  const aspectLines = []
+  for (let i = 0; i < aspectBodies.length; i++) {
+    for (let j = i + 1; j < aspectBodies.length; j++) {
+      const diff = Math.abs(aspectBodies[i].absolute - aspectBodies[j].absolute)
+      const norm = Math.min(diff, 360 - diff)
+      const isTrine    = Math.abs(norm - 120) < 8
+      const isSextile  = Math.abs(norm - 60) < 6
+      const isSquare   = Math.abs(norm - 90) < 6
+      const isOppose   = Math.abs(norm - 180) < 8
+      const isConj     = norm < 8
+      if (!isTrine && !isSextile && !isSquare && !isOppose && !isConj) continue
+      const color = (isSquare || isOppose)
+        ? 'rgba(248,113,113,0.45)'
+        : (isTrine || isSextile)
+          ? 'rgba(96,165,250,0.45)'
+          : 'rgba(250,204,21,0.45)'
+      const p1 = polar(aspectBodies[i].absolute, R_INNER - 2)
+      const p2 = polar(aspectBodies[j].absolute, R_INNER - 2)
+      aspectLines.push(
+        `<line x1="${p1.x.toFixed(2)}" y1="${p1.y.toFixed(2)}" x2="${p2.x.toFixed(2)}" y2="${p2.y.toFixed(2)}" stroke="${color}" stroke-width="1.2"/>`
+      )
+    }
+  }
+
+  const legendHTML = placements.map(p =>
+    `<div class="bc-row">
+      <span class="bc-glyph">${p.glyph}</span>
+      <span class="bc-name">${p.name}</span>
+      <span class="bc-pos">${p.sign} ${p.label}</span>
+    </div>`
+  ).join('')
+
+  return `<style>
+  .bc-wrap { width:100%; display:flex; justify-content:center; padding:20px; box-sizing:border-box; background:#070d1a; min-height:100vh; }
+  .bc-card { width:100%; max-width:1000px; background:#0b1120; border-radius:20px; padding:24px; box-sizing:border-box; color:white; }
+  .bc-title { font-size:22px; font-weight:700; color:white; margin:0 0 4px; line-height:1.4; word-break:break-word; overflow-wrap:break-word; }
+  .bc-sub { font-size:13px; color:rgba(255,255,255,0.6); margin:0 0 20px; line-height:1.5; word-break:break-word; overflow-wrap:break-word; }
+  .bc-layout { display:grid; grid-template-columns:minmax(0,560px) minmax(220px,1fr); gap:20px; align-items:start; }
+  .bc-svg-box { background:radial-gradient(circle at 50% 50%,#0f1f3d 0%,#070d1a 70%); border-radius:16px; display:flex; justify-content:center; align-items:center; padding:12px; box-sizing:border-box; }
+  .bc-legend { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.07); border-radius:14px; padding:14px; box-sizing:border-box; }
+  .bc-legend-title { font-size:13px; font-weight:700; color:#94a3b8; margin:0 0 10px; text-transform:uppercase; letter-spacing:0.06em; line-height:1.5; word-break:break-word; overflow-wrap:break-word; }
+  .bc-row { display:flex; align-items:baseline; gap:6px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06); line-height:1.5; word-break:break-word; overflow-wrap:break-word; }
+  .bc-glyph { width:18px; flex-shrink:0; font-size:14px; color:#e2e8f0; }
+  .bc-name { flex:1; font-size:12px; color:rgba(255,255,255,0.8); word-break:break-word; overflow-wrap:break-word; }
+  .bc-pos { font-size:11px; color:#64748b; white-space:nowrap; }
+  @media(max-width:820px){.bc-layout{grid-template-columns:1fr}}
+</style>
+<div class="bc-wrap">
+  <div class="bc-card">
+    <h2 class="bc-title">Astrological Birth Chart</h2>
+    <p class="bc-sub">Planets placed by exact degree from prompt data • Aspect lines: blue = trine/sextile, red = square/opposition, yellow = conjunction</p>
+    <div class="bc-layout">
+      <div class="bc-svg-box">
+        <svg viewBox="0 0 520 520" width="520" height="520" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="#0f1f3d"/>
+              <stop offset="100%" stop-color="#070d1a"/>
+            </radialGradient>
+          </defs>
+          <circle cx="${cx}" cy="${cy}" r="${R_OUTER + 4}" fill="url(#bg)"/>
+          ${ticks}
+          ${zodiacSegments}
+          ${houseSegments}
+          <circle cx="${cx}" cy="${cy}" r="${R_INNER}" fill="#07101f" stroke="rgba(148,163,184,0.2)" stroke-width="1.5"/>
+          ${aspectLines.join('\n')}
+          ${planetMarks}
+          <circle cx="${cx}" cy="${cy}" r="6" fill="#e2e8f0"/>
+          <text x="${cx}" y="${cy - 16}" text-anchor="middle" fill="rgba(255,255,255,0.9)" font-size="13" font-weight="600">Birth Chart</text>
+        </svg>
+      </div>
+      <div class="bc-legend">
+        <p class="bc-legend-title">Placements</p>
+        ${legendHTML}
+      </div>
+    </div>
+  </div>
+</div>`
+}
+
+// ─── System Prompt ────────────────────────────────────────────────────────────
+
 const STYLE_NUDGES = [
   'Use bold high-contrast typography with strong visual hierarchy.',
   'Use a minimal layout with generous white space and subtle details.',
@@ -175,196 +457,131 @@ function getStyleNudge() {
   return STYLE_NUDGES[Math.floor(Math.random() * STYLE_NUDGES.length)]
 }
 
-function buildSystemPrompt(gradient, includeGlass) {
-
+function buildSystemPrompt(gradient, includeGlass, includeVisualization, includeImages) {
   const glassSection = includeGlass ? `
 GLASSMORPHISM — FOLLOW EXACTLY:
-- NEVER use Tailwind classes for glass. Use the CSS classes below only.
-- All text inside glass must be color:white or rgba(255,255,255,0.85).
-- Gradient for this component: ${gradient} — copy it exactly, do not change it.
+- NEVER use Tailwind for glass. Use only the CSS classes below.
+- Gradient: ${gradient} — copy exactly.
 
-FOR A SINGLE GLASS CARD — use this EXACT structure, fill in the content:
+SINGLE GLASS CARD:
 <style>
-        .g-wrap { background:${gradient}; min-height:100vh; width:max-content; min-width:100%; display:flex; align-items:flex-start; justify-content:center; padding:48px; box-sizing:border-box; }
-  .g-card { backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.25); border-radius:24px; padding:48px; box-shadow:0 25px 50px rgba(0,0,0,0.3); width:100%; max-width:440px; }
-  .g-title { font-size:22px; font-weight:700; color:white; margin:0 0 8px; }
-  .g-sub { font-size:14px; color:rgba(255,255,255,0.65); margin:0 0 24px; }
-  .g-label { font-size:13px; font-weight:500; color:rgba(255,255,255,0.7); display:block; margin-bottom:6px; }
-  .g-input { display:block; width:100%; background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.3); border-radius:10px; padding:12px 16px; color:white; font-size:14px; box-sizing:border-box; margin-bottom:16px; }
-  .g-btn { display:block; width:100%; background:rgba(255,255,255,0.25); color:white; border:1px solid rgba(255,255,255,0.4); padding:13px 24px; border-radius:12px; cursor:pointer; font-weight:600; font-size:14px; text-align:center; }
-  .g-price-row { display:flex; align-items:baseline; gap:2px; margin:12px 0 20px; }
+  .g-wrap { background:${gradient}; min-height:100vh; width:max-content; min-width:100%; display:flex; align-items:flex-start; justify-content:center; padding:48px; box-sizing:border-box; }
+  .g-card { backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.25); border-radius:24px; padding:48px; box-shadow:0 25px 50px rgba(0,0,0,0.3); width:100%; max-width:480px; min-width:320px; box-sizing:border-box; position:relative; z-index:1; }
+  .g-title { font-size:22px; font-weight:700; color:white; margin:0 0 8px; line-height:1.3; word-break:break-word; overflow-wrap:break-word; }
+  .g-sub { font-size:14px; color:rgba(255,255,255,0.75); margin:0 0 24px; line-height:1.5; word-break:break-word; overflow-wrap:break-word; }
+  .g-label { font-size:13px; font-weight:500; color:rgba(255,255,255,0.8); display:block; margin-bottom:6px; line-height:1.5; }
+  .g-input { display:block; width:100%; background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.35); border-radius:10px; padding:12px 16px; color:white; font-size:14px; box-sizing:border-box; margin-bottom:16px; }
+  .g-btn { display:block; width:100%; background:rgba(255,255,255,0.25); color:white; border:1px solid rgba(255,255,255,0.45); padding:13px 24px; border-radius:12px; cursor:pointer; font-weight:600; font-size:14px; text-align:center; white-space:nowrap; word-break:normal; overflow-wrap:normal; box-sizing:border-box; }
+  .g-price-row { display:flex; flex-direction:row; align-items:baseline; gap:2px; margin:12px 0 20px; flex-wrap:nowrap; }
   .g-price-currency { font-size:16px; font-weight:600; color:white; white-space:nowrap; }
   .g-price-amount { font-size:28px; font-weight:700; color:white; white-space:nowrap; line-height:1; }
-  .g-price-period { font-size:12px; color:rgba(255,255,255,0.65); white-space:nowrap; margin-left:3px; }
-  input::placeholder, textarea::placeholder { color:rgba(255,255,255,0.5); }
+  .g-price-period { font-size:12px; color:rgba(255,255,255,0.7); white-space:nowrap; margin-left:3px; }
+  .g-feature { font-size:13px; color:rgba(255,255,255,0.85); padding:7px 0; border-bottom:1px solid rgba(255,255,255,0.12); word-break:break-word; overflow-wrap:break-word; line-height:1.5; }
+  input::placeholder,textarea::placeholder { color:rgba(255,255,255,0.55); }
 </style>
-<div class="g-wrap">
-  <div class="g-card">
-    <!-- YOUR CONTENT HERE. All text: color:white -->
-  </div>
-</div>
+<div class="g-wrap"><div class="g-card"><!-- content here --></div></div>
 
-FOR 2 OR MORE GLASS CARDS SIDE BY SIDE — use this EXACT structure:
+MULTIPLE GLASS CARDS SIDE BY SIDE:
 <style>
   .g-wrap { background:${gradient}; min-height:100vh; width:max-content; min-width:100%; display:flex; align-items:flex-start; justify-content:flex-start; padding:48px; box-sizing:border-box; }
   .g-row { display:flex; flex-direction:row; gap:24px; align-items:stretch; }
-  .g-card { backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.25); border-radius:24px; padding:32px; box-shadow:0 25px 50px rgba(0,0,0,0.3); width:280px; flex-shrink:0; display:flex; flex-direction:column; }
-  .g-title { font-size:18px; font-weight:700; color:white; margin:0 0 6px; }
-  .g-sub { font-size:13px; color:rgba(255,255,255,0.65); margin:0 0 20px; }
-  .g-price-row { display:flex; align-items:baseline; gap:2px; margin:0 0 16px; }
+  .g-card { backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.25); border-radius:24px; padding:32px; box-shadow:0 25px 50px rgba(0,0,0,0.3); width:280px; min-width:240px; flex-shrink:0; display:flex; flex-direction:column; box-sizing:border-box; position:relative; z-index:1; }
+  .g-title { font-size:18px; font-weight:700; color:white; margin:0 0 6px; line-height:1.3; word-break:break-word; overflow-wrap:break-word; }
+  .g-sub { font-size:13px; color:rgba(255,255,255,0.75); margin:0 0 20px; line-height:1.5; word-break:break-word; overflow-wrap:break-word; }
+  .g-price-row { display:flex; flex-direction:row; align-items:baseline; gap:2px; margin:0 0 16px; flex-wrap:nowrap; }
   .g-price-currency { font-size:15px; font-weight:600; color:white; white-space:nowrap; }
   .g-price-amount { font-size:28px; font-weight:700; color:white; white-space:nowrap; line-height:1; }
-  .g-price-period { font-size:12px; color:rgba(255,255,255,0.65); white-space:nowrap; margin-left:3px; }
+  .g-price-period { font-size:12px; color:rgba(255,255,255,0.7); white-space:nowrap; margin-left:3px; }
   .g-features { list-style:none; margin:0 0 20px; padding:0; flex:1; }
-  .g-feature { font-size:13px; color:rgba(255,255,255,0.8); padding:7px 0; border-bottom:1px solid rgba(255,255,255,0.1); }
-  .g-btn { background:rgba(255,255,255,0.25); color:white; border:1px solid rgba(255,255,255,0.4); padding:12px 20px; border-radius:12px; cursor:pointer; font-weight:600; font-size:13px; width:100%; margin-top:auto; }
-  input::placeholder, textarea::placeholder { color:rgba(255,255,255,0.5); }
+  .g-feature { font-size:13px; color:rgba(255,255,255,0.85); padding:7px 0; border-bottom:1px solid rgba(255,255,255,0.12); word-break:break-word; overflow-wrap:break-word; line-height:1.5; }
+  .g-btn { background:rgba(255,255,255,0.25); color:white; border:1px solid rgba(255,255,255,0.45); padding:12px 20px; border-radius:12px; cursor:pointer; font-weight:600; font-size:13px; width:100%; margin-top:auto; white-space:nowrap; word-break:normal; overflow-wrap:normal; box-sizing:border-box; }
+  input::placeholder,textarea::placeholder { color:rgba(255,255,255,0.55); }
 </style>
-<div class="g-wrap">
-  <div class="g-row">
-    <div class="g-card"><!-- card 1: all text color:white --></div>
-    <div class="g-card"><!-- card 2: all text color:white --></div>
-    <!-- add more g-card divs as needed -->
-  </div>
-</div>
+<div class="g-wrap"><div class="g-row"><div class="g-card"><!-- card 1 --></div><div class="g-card"><!-- card 2 --></div></div></div>
 
-Do not nest glass inside glass. Do not add any wrapper outside .g-wrap.
-Do not use Tailwind classes anywhere inside glass components.
+Do not nest glass inside glass. No Tailwind in glass components.
 ` : `
 NON-GLASS COMPONENTS:
-- White card backgrounds (#ffffff), zinc or slate text (#18181b or #3f3f46).
-- Define CSS classes in a <style> block for the card, heading, subtext, buttons, etc.
-- Padding at least 32px. Shadow: 0 1px 4px rgba(0,0,0,0.08). Border-radius: 16px or 20px.
-- Do NOT add any gradient background for non-glass components.
-- The card sits on a plain light background — you do not need to add a background at all.
+- White backgrounds (#ffffff). Text: #18181b or #3f3f46. Never white text on white background.
+- All styles in a <style> block as named CSS classes.
+- Cards: box-sizing:border-box; position:relative; overflow:visible; padding min 32px; border-radius:16px; box-shadow:0 1px 4px rgba(0,0,0,0.08);
+- No gradient or colored background wrapper for non-glass components.
+- Single card: center it with <div style="display:flex;justify-content:center;align-items:flex-start;width:100%;">
 `
 
-  return `You are a world-class Design Engineer. Return ONLY raw HTML for the requested UI component.
+  const imageSection = includeImages ? `
+IMAGES:
+- Use https://picsum.photos/seed/KEYWORD/WIDTH/HEIGHT for all photos.
+- Always include alt text, width:100%, height:100%, object-fit:cover, display:block.
+- Hero image: height:220px. Thumbnails side by side: height:180px.
+- NEVER use placeholder.com, fake filenames, or empty src attributes.
+` : ''
 
-CRITICAL OUTPUT FORMAT:
-- Your entire response must be valid HTML starting with <style> or <div>.
-- Return absolutely nothing else: no explanation, no comments outside the HTML, 
-  no markdown, no backticks, no code fences, no "Here is..." text.
-- If you cannot generate valid HTML, return <div>Error</div>.
+  const visualizationSection = includeVisualization ? `
+SVG CHARTS AND VISUALIZATIONS:
+- Use inline SVG. Never fake charts with CSS circles or decorative geometry.
+- viewBox="0 0 500 500" width="500" height="500"
+- Plot data from the exact values in the prompt — do not invent positions.
+- For pie/donut: use arc paths. For gauges: use semicircle arcs.
+- For astrological wheels: Aries=0°, each sign adds 30°. Plot planets at their exact degree.
+` : ''
 
-CSS STRUCTURE — ALWAYS DO THIS:
-- Begin output with a <style> block containing named CSS classes.
-- Use those class names throughout the HTML.
-- This allows the tool to split code into separate CSS and HTML tabs.
-- Only use inline style="" for one-off values that have no reusable class.
+  return `You are a world-class Design Engineer. Return ONLY raw HTML.
 
-      STAR RATINGS — READ EVERY WORD:
-      - NEVER use CSS ::before or ::after pseudo-elements for stars.
-      - NEVER use SVG for stars.
-      - NEVER use ^ or › or > or any arrow/chevron character for stars.
-      - NEVER use separate block-level divs for individual stars.
-      - The ONLY allowed star characters are ★ (filled) and ☆ (empty).
-      - Stars must ALWAYS be in a single horizontal row, never stacked vertically.
-      - When stars are requested, use EXACTLY this pattern in your CSS and HTML:
+OUTPUT FORMAT — CRITICAL:
+- Start with <style> or <div> or <svg>. Nothing before it.
+- No explanation, no markdown, no backticks, no code fences, no "Here is..." text.
+- If you cannot produce valid HTML return exactly: <div>Error</div>
 
-        In your <style> block:
-        .star-row { display:flex; flex-direction:row; flex-wrap:nowrap; align-items:center; gap:3px; margin:10px 0; }
-        .star { display:inline-block; font-size:22px; line-height:1; word-break:normal; }
-        .star.filled { color:#facc15; }
-        .star.empty { color:#d1d5db; }
+CSS:
+- Always begin with a <style> block of named CSS classes.
+- Use class names throughout. Only inline style="" for one-off values.
 
-        In your HTML:
-        <div class="star-row">
-          <span class="star filled">★</span>
-          <span class="star filled">★</span>
-          <span class="star filled">★</span>
-          <span class="star filled">★</span>
-          <span class="star filled">★</span>
-        </div>
+TEXT:
+- Every text CSS class: word-break:break-word; overflow-wrap:break-word; line-height:1.5;
+- Never overflow:hidden on cards. Cards grow vertically.
+- Dark text on light bg (#18181b). White text on dark bg. Never invisible text.
 
-      - Adjust filled vs empty spans for the requested rating (e.g. 4 stars = 4 filled + 1 empty).
-      - Do not wrap each star in its own div. Each star is a <span> only.
-      - This rule is enforced by post-processing. Violations will be corrected automatically.
-      - NEVER add stars unless the prompt explicitly contains "star", "rating", or "review".
+CARDS:
+- Single card: min-width 320px, preferred 380px. box-sizing:border-box.
+- Multi-card row cards: min-width 240px, preferred 280px.
+- Every card: position:relative; z-index:1;
+- Single card centering: wrap in display:flex;justify-content:center;
+- Multi-card rows: display:flex;flex-direction:row;gap:24px;width:max-content;min-width:100%;padding:48px;
 
-EMOJIS — STRICT BAN:
-- Do NOT add decorative emojis to headings, feature lists, card titles, or pricing tiers.
-- Do not add 🚀 💎 🔒 ⚡ ✨ 🎯 🏆 💡 🔥 👑 or similar unless explicitly asked for.
-- Functional emojis are allowed ONLY when the user specifically requests them.
-  Example: "red heart counter button" → ❤️ in that button is appropriate and correct.
-- When in doubt: leave emojis out entirely.
-
-PRICE DISPLAY — CRITICAL, PREVENTS BROKEN LAYOUTS:
-- Price numbers must NEVER break across lines mid-digit.
-- Always use this exact pattern for any monetary value:
-  <div class="price-row">
-    <span class="price-currency">$</span>
-    <span class="price-amount">29</span>
-    <span class="price-period">/month</span>
-  </div>
-- In your <style> block include:
-  .price-row { display:flex; align-items:baseline; gap:2px; }
-  .price-currency { font-size:15px; font-weight:600; white-space:nowrap; }
-  .price-amount { font-size:28px; font-weight:700; white-space:nowrap; line-height:1; }
-  .price-period { font-size:12px; white-space:nowrap; margin-left:3px; opacity:0.75; }
-- Maximum font-size for any price number is 28px. Never go larger.
-- Add white-space:nowrap to EVERY span inside a price row.
+PRICES:
+- .price-row{display:flex;flex-direction:row;align-items:baseline;gap:2px;flex-wrap:nowrap;}
+- .price-amount{font-size:28px;font-weight:700;white-space:nowrap;line-height:1;}
+- Never larger than 28px. Always white-space:nowrap.
 
 BUTTONS:
-      - ALL buttons must have white-space:nowrap in their CSS class. No exceptions.
-      - ALL buttons must have enough horizontal padding so their label fits on one line.
-      - Minimum button padding: padding:10px 20px. Preferred: padding:12px 24px.
-      - For buttons inside narrow cards (width under 240px): use font-size:13px and padding:10px 16px.
-      - NEVER let a button label wrap to a second line.
-      - In your <style> block, every button class must include: white-space:nowrap; word-break:normal; overflow-wrap:normal;
+- white-space:nowrap; word-break:normal; overflow-wrap:normal;
+- Padding: 12px 24px min. Labels never wrap.
+- Two buttons side by side: wrap in .btn-row{display:flex;flex-direction:row;gap:12px;}
 
-SIDE-BY-SIDE BUTTON GROUPS — REQUIRED:
-- When the user asks for buttons "next to each other", "side by side", or lists
-  two or more buttons that should appear in the same row, you MUST wrap them:
-  <div class="btn-row">
-    <button class="btn" id="btn-one">Label 1</button>
-    <button class="btn" id="btn-two">Label 2</button>
-  </div>
-- In your <style> block include:
-  .btn-row { display:flex; flex-direction:row; gap:12px; justify-content:center; width:100%; margin:12px 0; }
-- NEVER place two sibling buttons as direct children of a column-flex container.
+STARS:
+- Only ★ and ☆ in <span> elements. Never SVG or pseudo-elements for stars.
+- .star-row{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;gap:3px;}
+- NEVER add stars unless the prompt says "star", "rating", or "review".
 
-LINKS AND URLS:
-- ALL href values must start with https://
-- Correct: href="https://www.linkedin.com/in/username"
-- Wrong:   href="www.linkedin.com/in/username"
-- Always add target="_blank" rel="noopener noreferrer" to every external link.
-- LinkedIn button pattern:
-  .linkedin-btn { display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; background:#0077b5; border-radius:8px; color:white; text-decoration:none; font-weight:700; font-size:15px; }
-  <a href="https://FULL_URL" target="_blank" rel="noopener noreferrer" class="linkedin-btn">in</a>
+EMOJIS: Banned unless user explicitly requests them.
 
-SIZE SPECIFICATIONS:
-- "compact" or "small": padding:16px, font-size:13px, card width ~260px.
-- "large" or "spacious": padding:48px, font-size:16px, card width ~480px.
-- Pixel value like "600px": use that exact value as the width of the main card.
-- "full-width": width:100% on the outer container.
-- Avatar: "small"=40px, "medium"=64px, "large"=96px. Default=56px.
+LINKS: All href must start https://. Add target="_blank" rel="noopener noreferrer".
 
-TEXT OVERFLOW:
-- ALL text elements must have word-break:break-word; overflow-wrap:break-word; in their CSS class.
-- Exception: price elements — those use white-space:nowrap instead (see above).
-- NEVER set overflow:hidden on any card, wrapper, or container.
+AVATARS: Never <img>. Use gradient circle div with initials span.
 
-AVATARS:
-- Never use <img>. Never use any URL.
-- Define as a CSS class:
-  .avatar { width:64px; height:64px; border-radius:50%; background:linear-gradient(135deg,#818cf8,#6366f1); display:flex; align-items:center; justify-content:center; margin:0 auto; }
-- Put uppercase initials inside: <span style="color:white;font-weight:700;font-size:18px;">AB</span>
+JAVASCRIPT: Single <script> at bottom. Unique ids on all interactive elements.
 
-INTERACTIVE JAVASCRIPT:
-- Put all JS in a single <script> tag at the very bottom of your output.
-- Give every interactive element a unique id.
-- Counter pattern: start at 0, increment on click, update innerHTML immediately.
-- Toggle pattern: track boolean state, swap display:block / display:none on click.
+BANNED:
+- writing-mode, text-orientation, transform:rotate on text — ALL BANNED.
+- Vertical text of any kind.
 
-MULTIPLE NON-GLASS CARDS SIDE BY SIDE:
-- Each card needs a fixed width. Never flex:1.
-- 3 cards: width:280px; flex-shrink:0 each.
-- 5 cards: width:220px; flex-shrink:0 each.
-- Outer wrapper: display:flex; flex-direction:row; gap:24px; width:max-content; min-width:100%; padding:48px;
-
+${imageSection}
+${visualizationSection}
 ${glassSection}`
 }
+
+// ─── App ──────────────────────────────────────────────────────────────────────
 
 function App() {
   const [prompt, setPrompt]               = useState('')
@@ -381,12 +598,70 @@ function App() {
     setError('')
     setGeneratedCode('')
 
-    const glassRequest = isGlassRequest(prompt)
-    const gradient     = glassRequest ? selectGradient(prompt) : ''
-    const styleNudge   = getStyleNudge()
-    const systemPrompt = buildSystemPrompt(gradient, glassRequest)
+    // Birth chart requests are handled entirely locally — no API call needed.
+    // This completely bypasses all token limits for birth chart prompts.
+    if (isBirthChartRequest(prompt)) {
+      try {
+        const birthChartHTML = buildBirthChartHTML(prompt)
+        setGeneratedCode(birthChartHTML)
+        setActiveModel('local-renderer')
+        setHistory(prev => [
+          {
+            id: Date.now(),
+            prompt,
+            code: birthChartHTML,
+            gradient: '',
+            timestamp: new Date().toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit'
+            })
+          },
+          ...prev
+        ])
+        setLoading(false)
+        return
+      } catch (err) {
+        console.error('Local birth chart renderer failed, falling through to API:', err)
+      }
+    }
 
-    for (const model of MODELS) {
+    const glassRequest         = isGlassRequest(prompt)
+    const gradient             = glassRequest ? selectGradient(prompt) : ''
+    const styleNudge           = getStyleNudge()
+    const visualizationRequest = isVisualizationRequest(prompt)
+    const imageRequest         = isImageRequest(prompt)
+    const systemPrompt         = buildSystemPrompt(
+      gradient,
+      glassRequest,
+      visualizationRequest,
+      imageRequest
+    )
+
+    const userMessage = `Create this UI component: ${prompt}\n\nStyle direction: ${styleNudge}`
+
+    // Estimate total tokens this request will consume.
+    // We use this to decide which models are safe to try
+    // rather than a character-length threshold, which was
+    // the bug that caused llama-3.1-8b-instant to be skipped
+    // on every single request.
+    const estimatedTokens = estimateTokens(systemPrompt + userMessage)
+
+    // Build the model list from most-generous-limit first.
+    // Only skip a model if we have a concrete reason it will fail.
+    const modelsToTry = MODELS.filter(model => {
+      if (model === 'llama-3.1-8b-instant') {
+        // This model has a hard 6,000 TPM cap.
+        // Skip it only when the request is provably too large for it.
+        return estimatedTokens < SMALL_MODEL_TOKEN_LIMIT
+      }
+      return true
+    })
+
+    // If the small model was the only one and got filtered,
+    // fall back to trying all remaining models anyway
+    const finalModels = modelsToTry.length > 0 ? modelsToTry : MODELS.slice(1)
+
+    for (const model of finalModels) {
       try {
         const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
@@ -396,14 +671,14 @@ function App() {
           },
           body: JSON.stringify({
             model,
-            temperature: 0.9,
+            temperature: 0.7,
             messages: [
               { role: 'system', content: systemPrompt },
-              {
-                role: 'user',
-                content: `Create this UI component: ${prompt}\n\nStyle direction: ${styleNudge}`
-              }
+              { role: 'user',   content: userMessage  }
             ],
+            // 1600-1800 is enough for all standard components.
+            // Keeps us well inside per-minute token budgets
+            // so we stop burning through rate limits.
             max_tokens: 1600,
           }),
         })
@@ -415,9 +690,17 @@ function App() {
 
         if (!response.ok) {
           const errData = await response.json().catch(() => ({}))
-          setError(`API error: ${errData?.error?.message || response.statusText}`)
-          setLoading(false)
-          return
+          const errMsg  = errData?.error?.message || response.statusText || ''
+
+          if (isRequestTooLarge(response.status, errMsg)) {
+            console.warn(`${model} request too large. Trying next...`)
+            continue
+          }
+
+          // For any other non-ok status, log it but keep trying
+          // remaining models rather than surfacing immediately.
+          console.warn(`${model} error ${response.status}: ${errMsg}. Trying next...`)
+          continue
         }
 
         const data = await response.json()
@@ -427,21 +710,17 @@ function App() {
           continue
         }
 
-        // Step 1: strip markdown fences and thinking tags
         const cleaned = cleanCode(data.choices[0].message.content)
 
-        // Step 2: validate it is actually HTML
         if (!isValidHTML(cleaned)) {
           console.warn(`${model} returned non-HTML. Trying next...`)
           continue
         }
 
-        // Step 3: post-process to remove anything that violated content rules
         const code = sanitizeOutput(cleaned, prompt)
 
         setActiveModel(model)
         setGeneratedCode(code)
-
         setHistory(prev => [
           {
             id: Date.now(),
@@ -465,7 +744,7 @@ function App() {
       }
     }
 
-    setError('All models are rate limited. Wait 60 seconds and try again.')
+    setError('All models were rate limited or returned invalid output. Wait 60 seconds and try again.')
     setLoading(false)
   }
 
