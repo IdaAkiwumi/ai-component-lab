@@ -80,6 +80,7 @@ calls are all blocked at the server.
 (glassmorphism, visualization, image, birth chart, star/emoji) to select the right system prompt,
 CSS template, and sanitization pass. Birth chart requests bypass the API entirely and render locally
 via a custom inline SVG engine.
+
 ---
 
 ### 🖥️ Local Development
