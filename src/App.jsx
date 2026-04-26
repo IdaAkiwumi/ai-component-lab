@@ -1231,6 +1231,7 @@ CSS RULES:
 - NEVER use writing-mode, text-orientation, or transform:rotate on text.
 - NEVER use overflow:hidden on cards or containers.
 - Cards always grow vertically to fit content.
+- NEVER use border-radius:50% or border-radius:999px on any card, container, wrapper, section, or background element. Oval and pill-shaped backgrounds are strictly forbidden. Only use border-radius:50% on avatar img tags or icon circles smaller than 72px.
 
 BUTTONS:
 - white-space:nowrap; word-break:normal; overflow-wrap:normal;
@@ -1245,7 +1246,7 @@ PRICES:
 STARS: Only ★ ☆ in spans. Never SVG stars. Only if prompt mentions "star/rating/review".
 EMOJIS: Banned unless explicitly requested.
 LINKS: All href starts https://. Add target="_blank" rel="noopener noreferrer".
-AVATARS: Never img. Use gradient circle div with initials span.
+AVATARS: If the prompt mentions avatar, profile photo, profile picture, headshot, or user photo — use a REAL photo from https://i.pravatar.cc/150?img= followed by a random number between 1 and 70. Use a different number for each person. Style with border-radius:50% on the img tag only, equal width and height (48px–72px), object-fit:cover. If no photo is mentioned, use a colored circle div with initials instead. NEVER use border-radius:50% on cards, wrappers, or containers — only on avatar img tags or small icon circles under 72px.
 JAVASCRIPT: Single script at bottom. Unique ids on interactive elements.
 BANNED: writing-mode, text-orientation, transform:rotate on text, vertical text of any kind.
 
