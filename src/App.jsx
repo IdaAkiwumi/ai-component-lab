@@ -221,6 +221,8 @@ function isBirthChartRequest(prompt) {
 
 // ─── Birth Chart Constants ────────────────────────────────────────────────────
 
+// ─── Birth Chart Constants ────────────────────────────────────────────────────
+
 const SIGN_BASE_DEGS = {
   aries: 0, taurus: 30, gemini: 60, cancer: 90, leo: 120, virgo: 150,
   libra: 180, scorpio: 210, sagittarius: 240, capricorn: 270, aquarius: 300, pisces: 330,
@@ -249,421 +251,238 @@ const SIGN_MODALITIES = {
 }
 const OUTER_BODIES = new Set(['Lilith','Ceres','Pallas Athena','Juno','Vesta','Pholus','Eros','Psyche','Chiron'])
 
-// ─── Theme System ─────────────────────────────────────────────────────────────
+// ─── Color Palette ────────────────────────────────────────────────────────────
 
-// Parse explicit color keywords from prompt - checked FIRST before random
-function parseExplicitColors(prompt) {
-  // ─── FIX: strip all zodiac sign names and planet names BEFORE color scan ──
-  // This prevents 'sage' inside 'Sagittarius', 'rose' inside 'scorpio' etc
-  // from triggering false color matches
-  const stripped = prompt
+const CHART_COLOR_PALETTE = {
+  red:      { h:0,   s:80, l:45, dark:'#1a0404', mid:'#cc2222', light:'#ff8888', text:'#ffe0e0' },
+  orange:   { h:25,  s:85, l:48, dark:'#1a0800', mid:'#dd6600', light:'#ff9944', text:'#ffe0c0' },
+  gold:     { h:42,  s:90, l:45, dark:'#1a1200', mid:'#cc9900', light:'#ffcc44', text:'#fff0a0' },
+  yellow:   { h:55,  s:90, l:50, dark:'#141200', mid:'#ccaa00', light:'#ffee44', text:'#fffff0' },
+  lime:     { h:80,  s:70, l:42, dark:'#0c1400', mid:'#66aa00', light:'#aadd44', text:'#eeffcc' },
+  green:    { h:140, s:70, l:38, dark:'#041408', mid:'#228844', light:'#44cc77', text:'#aaeebb' },
+  sage:     { h:130, s:35, l:38, dark:'#0a140a', mid:'#5a8040', light:'#a0c880', text:'#c8e0b0' },
+  teal:     { h:175, s:75, l:38, dark:'#021414', mid:'#119999', light:'#44cccc', text:'#aaeee0' },
+  cyan:     { h:190, s:80, l:45, dark:'#021418', mid:'#0099bb', light:'#44ccee', text:'#aaeeff' },
+  blue:     { h:220, s:80, l:48, dark:'#030a18', mid:'#2255cc', light:'#6699ff', text:'#ccdeff' },
+  navy:     { h:225, s:75, l:30, dark:'#020810', mid:'#1a3a88', light:'#4466bb', text:'#b0ccf0' },
+  indigo:   { h:245, s:70, l:42, dark:'#060418', mid:'#4433aa', light:'#8866dd', text:'#d0c0ff' },
+  purple:   { h:270, s:75, l:42, dark:'#080414', mid:'#7733bb', light:'#bb66ff', text:'#eed0ff' },
+  violet:   { h:280, s:70, l:45, dark:'#08040e', mid:'#8833cc', light:'#cc66ff', text:'#f0d0ff' },
+  pink:     { h:330, s:75, l:48, dark:'#140408', mid:'#cc3377', light:'#ff77bb', text:'#ffd0e8' },
+  rose:     { h:350, s:75, l:48, dark:'#140408', mid:'#cc3355', light:'#ff7799', text:'#ffd0d8' },
+  // Light themes
+  white:    { h:0,   s:0,  l:100, dark:'#f2f2f2', mid:'#888888', light:'#222222', text:'#111111', isLight:true },
+  cream:    { h:40,  s:35, l:94,  dark:'#f5efe0', mid:'#a08850', light:'#5a4a28', text:'#2e2010', isLight:true },
+  silver:   { h:210, s:18, l:72,  dark:'#d8dfe8', mid:'#a0adb8', light:'#6a7a88', text:'#1a2030', isLight:true },
+  // Dark/neutral
+  charcoal: { h:215, s:10, l:22,  dark:'#1c2028', mid:'#4a5260', light:'#8a96a4', text:'#dde2e8' },
+  black:    { h:0,   s:0,  l:5,   dark:'#000000', mid:'#444444', light:'#aaaaaa', text:'#ffffff' },
+  // Special
+  cosmic:   { h:270, s:90, l:35, dark:'#07000f', mid:'#9933cc', light:'#dd88ff', text:'#f0e0ff' },
+  warm:     { h:35,  s:70, l:40, dark:'#120d04', mid:'#aa7722', light:'#ffcc66', text:'#fff0c0' },
+  bronze:   { h:30,  s:60, l:38, dark:'#100800', mid:'#996633', light:'#cc9955', text:'#ffe8cc' },
+  coral:    { h:16,  s:80, l:55, dark:'#180600', mid:'#dd5533', light:'#ff8866', text:'#ffe4dc' },
+  lavender: { h:260, s:50, l:65, dark:'#0c0820', mid:'#9977cc', light:'#ccaaff', text:'#f0e8ff' },
+  mint:     { h:160, s:60, l:55, dark:'#021410', mid:'#44aa88', light:'#88ddbb', text:'#ccffee' },
+}
+
+const CHART_COLOR_ALIASES = {
+  // Reds
+  scarlet:'red', crimson:'red', ruby:'red', maroon:'red',
+  // Oranges
+  apricot:'orange',
+  // Golds
+  amber:'gold', mustard:'gold', honey:'gold',
+  // Warm neutrals
+  copper:'bronze', caramel:'warm',
+  terracotta:'coral', salmon:'coral', peach:'coral',
+  // Greens
+  emerald:'green', forest:'green',
+  jade:'sage', olive:'sage',
+  seafoam:'mint',
+  // Blues
+  cobalt:'blue', royal:'blue',
+  sapphire:'navy', midnight:'navy',
+  aquamarine:'cyan', 'ice blue':'cyan',
+  turquoise:'teal',
+  // Purples
+  amethyst:'purple', plum:'purple',
+  mauve:'violet',
+  magenta:'pink', fuchsia:'pink',
+  // Pinks
+  'rose gold':'rose', burgundy:'rose',
+  // Whites / lights
+  ivory:'cream',
+  pewter:'silver', ash:'silver',
+  // Greys — each declared exactly once
+  grey:'silver', gray:'silver',
+  grayscale:'silver', monochrome:'silver',
+  // Darks
+  graphite:'charcoal', slate:'charcoal',
+  obsidian:'black', onyx:'black', noir:'black',
+  chocolate:'bronze',
+  // Specials
+  space:'cosmic', galaxy:'cosmic', nebula:'cosmic', stellar:'cosmic',
+  neon:'cyan', electric:'cyan',
+  glow:'teal',
+  pastel:'lavender', dreamy:'lavender', whimsical:'lavender',
+}
+
+// ─── Theme Builder ────────────────────────────────────────────────────────────
+
+function hslStr(h, s, l) {
+  return `hsl(${h},${s}%,${l}%)`
+}
+
+function hexToRgb(hex) {
+  if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return '128,128,128'
+  const h = hex.replace('#', '')
+  if (h.length === 3) {
+    const r = parseInt(h[0] + h[0], 16)
+    const g = parseInt(h[1] + h[1], 16)
+    const b = parseInt(h[2] + h[2], 16)
+    return `${r},${g},${b}`
+  }
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  return `${r},${g},${b}`
+}
+
+function parseChartColors(prompt) {
+  // Strip zodiac/astro words to avoid false matches like 'sage' in 'Sagittarius'
+  const cleaned = prompt
     .toLowerCase()
     .replace(/\b(aries|taurus|gemini|cancer|leo|virgo|libra|scorpio|sagittarius|capricorn|aquarius|pisces)\b/g, '')
     .replace(/\b(sun|moon|mercury|venus|mars|jupiter|saturn|uranus|neptune|pluto|chiron|lilith|ceres|juno|vesta|pholus|ascendant|midheaven|north node|south node)\b/g, '')
-    .replace(/\b(conjunction|sextile|square|trine|opposition|natal|birth|chart|wheel|house|rising|astrological|placidus|retrograde)\b/g, '')
+    .replace(/\b(conjunction|sextile|square|trine|opposition|natal|birth|chart|wheel|house|rising|astrological|placidus|retrograde|interactive|hoverable|clickable)\b/g, '')
+    .replace(/\d+°?\s*\d*'?/g, ' ')
+    .replace(/[^a-z\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 
   const found = []
 
-  // ─── FIX: use word-boundary aware matching for short color words ──────────
-  // 'red', 'blue', 'gold' etc must be standalone words not substrings
-  const colorKeywords = [
-    { keys: ['\\bred\\b','crimson','scarlet','ruby'], id: 'red' },
-    { keys: ['\\bblue\\b','cobalt','royal blue','sapphire','navy blue','midnight blue','azure','cerulean'], id: 'blue' },
-    { keys: ['\\bnavy\\b','indigo'], id: 'navy' },
-    { keys: ['\\bgreen\\b','emerald','forest green','lime green','jade','olive green'], id: 'green' },
-    { keys: ['\\bsage\\b','sage green'], id: 'sage' },
-    { keys: ['\\bpurple\\b','violet','lavender','amethyst','plum'], id: 'purple' },
-    { keys: ['\\bgold\\b','\\bamber\\b','mustard','honey'], id: 'gold' },
-    { keys: ['\\borange\\b','\\bcoral\\b','\\bpeach\\b','terracotta'], id: 'orange' },
-    { keys: ['\\bpink\\b','magenta','fuchsia'], id: 'pink' },
-    { keys: ['\\bteal\\b','turquoise','aqua','seafoam'], id: 'teal' },
-    { keys: ['\\bcyan\\b','ice blue'], id: 'cyan' },
-    { keys: ['\\bblack\\b','obsidian','onyx','noir','dark background','black background'], id: 'black' },
-    { keys: ['\\bwhite\\b','ivory','cream background','white background','light background','minimal','\\blight\\b'], id: 'white' },
-    { keys: ['\\bwarm\\b','vintage','sepia','bronze','copper'], id: 'warm' },
-    { keys: ['cosmic','galaxy','space','nebula','stellar'], id: 'cosmic' },
-    { keys: ['monochrome','grayscale','\\bgrey\\b','\\bgray\\b'], id: 'mono' },
-    { keys: ['\\bneon\\b','electric','glow vivid','\\bbright\\b'], id: 'neon' },
-    { keys: ['\\brose\\b','rose gold'], id: 'pink' },
-    { keys: ['\\bmidnight\\b'], id: 'navy' },
-  ]
-
-  for (const { keys, id } of colorKeywords) {
-    if (found.includes(id)) continue
-    const matched = keys.some(k => {
-      if (k.startsWith('\\b')) {
-        // word boundary check
-        return new RegExp(k).test(stripped)
-      }
-      return stripped.includes(k)
-    })
-    if (matched) found.push(id)
+  // Check multi-word aliases first
+  for (const [alias, target] of Object.entries(CHART_COLOR_ALIASES)) {
+    if (cleaned.includes(alias) && !found.includes(target)) {
+      found.push(target)
+    }
   }
-  return found
+
+  // Check direct palette names with word boundaries
+  for (const colorName of Object.keys(CHART_COLOR_PALETTE)) {
+    const re = new RegExp(`\\b${colorName}\\b`)
+    if (re.test(cleaned) && !found.includes(colorName)) {
+      found.push(colorName)
+    }
+  }
+
+  return found.slice(0, 2)
 }
 
-// Build a theme from color IDs. Multiple colors = multi-accent theme.
-function buildThemeFromColors(colorIds, seed) {
-  // Multi-color combos
-  const combo = colorIds.slice(0,2).sort().join('+')
+function buildChartTheme(colorIds) {
+  const FALLBACK_POOL = ['navy','purple','teal','cosmic','warm','green','blue','gold','rose']
 
-  const multiThemes = {
-    'black+red': {
-      bg:'#0a0000',cardBg:'#120404',cardBorder:'rgba(200,40,40,0.2)',
-      svgBgInner:'#1a0606',svgBgOuter:'#080000',
-      zodiacFire:'#2a0808',zodiacEarth:'#1a0808',zodiacAir:'#140808',zodiacWater:'#100808',
-      zodiacFireS:'#cc2222',zodiacEarthS:'#882222',zodiacAirS:'#661111',zodiacWaterS:'#551111',
-      houseEven:'#120404',houseOdd:'#0e0303',innerCircle:'#080000',
-      signTextColor:'#ff9999',tickColor:'rgba(220,60,60,',dividerColor:'rgba(200,40,40,0.3)',
-      houseNumColor:'#883333',axisLineColor:'rgba(255,100,100,0.9)',axisLabelColor:'rgba(220,80,80,0.75)',
-      planetFill:'#1a0606',planetStroke:'rgba(220,60,60,0.85)',planetText:'#ffcccc',
-      outerPlanetText:'#cc6666',outerPlanetLine:'rgba(200,40,40,0.25)',centerDot:'#ff8080',
-      titleColor:'#ff8080',subColor:'rgba(255,128,128,0.45)',
-      legendBg:'rgba(200,40,40,0.05)',legendBorder:'rgba(200,40,40,0.15)',
-      legendTitleColor:'#882222',legendNameColor:'rgba(255,160,160,0.85)',legendPosColor:'#661111',
-      tooltipBg:'#120404',tooltipBorder:'rgba(200,40,40,0.4)',tooltipText:'#ffcccc',
-      aspectConj:'rgba(255,220,50,0.65)',aspectSext:'rgba(255,120,120,0.5)',
-      aspectSq:'rgba(255,60,60,0.55)',aspectTrine:'rgba(200,80,80,0.5)',aspectOpp:'rgba(255,60,60,0.6)',
-      isDark:true,
-    },
-    'blue+red': {
-      bg:'#050510',cardBg:'#080818',cardBorder:'rgba(120,80,220,0.2)',
-      svgBgInner:'#100828',svgBgOuter:'#050510',
-      zodiacFire:'#1a0818',zodiacEarth:'#080a28',zodiacAir:'#060820',zodiacWater:'#050818',
-      zodiacFireS:'#dd3366',zodiacEarthS:'#4466cc',zodiacAirS:'#3355bb',zodiacWaterS:'#5544aa',
-      houseEven:'#080818',houseOdd:'#060612',innerCircle:'#040410',
-      signTextColor:'#c0b0ff',tickColor:'rgba(140,100,255,',dividerColor:'rgba(120,80,220,0.3)',
-      houseNumColor:'#6655aa',axisLineColor:'rgba(180,140,255,0.9)',axisLabelColor:'rgba(160,120,240,0.75)',
-      planetFill:'#100828',planetStroke:'rgba(160,120,255,0.85)',planetText:'#e0d0ff',
-      outerPlanetText:'#9988cc',outerPlanetLine:'rgba(120,80,220,0.25)',centerDot:'#cc99ff',
-      titleColor:'#cc99ff',subColor:'rgba(200,160,255,0.45)',
-      legendBg:'rgba(120,80,220,0.05)',legendBorder:'rgba(120,80,220,0.15)',
-      legendTitleColor:'#7755bb',legendNameColor:'rgba(200,160,255,0.85)',legendPosColor:'#6644aa',
-      tooltipBg:'#080818',tooltipBorder:'rgba(160,120,255,0.4)',tooltipText:'#e0d0ff',
-      aspectConj:'rgba(255,220,50,0.65)',aspectSext:'rgba(100,160,255,0.5)',
-      aspectSq:'rgba(255,80,80,0.55)',aspectTrine:'rgba(100,200,160,0.5)',aspectOpp:'rgba(255,80,100,0.6)',
-      isDark:true,
-    },
-    'black+gold': {
-      bg:'#080600',cardBg:'#100c00',cardBorder:'rgba(200,160,40,0.2)',
-      svgBgInner:'#1c1600',svgBgOuter:'#080600',
-      zodiacFire:'#1c1000',zodiacEarth:'#141000',zodiacAir:'#0e0c00',zodiacWater:'#0a0a00',
-      zodiacFireS:'#cc9900',zodiacEarthS:'#aa7700',zodiacAirS:'#886600',zodiacWaterS:'#664400',
-      houseEven:'#100c00',houseOdd:'#0c0a00',innerCircle:'#080600',
-      signTextColor:'#ffd060',tickColor:'rgba(200,160,40,',dividerColor:'rgba(200,160,40,0.3)',
-      houseNumColor:'#886600',axisLineColor:'rgba(240,200,60,0.9)',axisLabelColor:'rgba(220,180,60,0.75)',
-      planetFill:'#1c1600',planetStroke:'rgba(200,160,40,0.85)',planetText:'#fff0a0',
-      outerPlanetText:'#cc9933',outerPlanetLine:'rgba(200,160,40,0.25)',centerDot:'#ffd040',
-      titleColor:'#ffd040',subColor:'rgba(255,208,64,0.45)',
-      legendBg:'rgba(200,160,40,0.05)',legendBorder:'rgba(200,160,40,0.15)',
-      legendTitleColor:'#886600',legendNameColor:'rgba(255,208,100,0.85)',legendPosColor:'#664400',
-      tooltipBg:'#100c00',tooltipBorder:'rgba(200,160,40,0.4)',tooltipText:'#fff0a0',
-      aspectConj:'rgba(255,220,50,0.7)',aspectSext:'rgba(200,180,80,0.5)',
-      aspectSq:'rgba(255,120,40,0.55)',aspectTrine:'rgba(160,200,80,0.5)',aspectOpp:'rgba(255,120,40,0.6)',
-      isDark:true,
-    },
+  if (colorIds.length === 0) {
+    const pick = FALLBACK_POOL[Math.floor(Math.random() * FALLBACK_POOL.length)]
+    colorIds = [pick]
   }
 
-  if (multiThemes[combo]) return multiThemes[combo]
+  const c1id = colorIds[0]
+  const c2id = colorIds[1] || null
+  const C1 = CHART_COLOR_PALETTE[c1id] || CHART_COLOR_PALETTE.navy
+  const C2 = c2id ? (CHART_COLOR_PALETTE[c2id] || null) : null
 
-  // Single color themes
-  const singleThemes = {
-    red: {
-      bg:'#0e0404',cardBg:'#160606',cardBorder:'rgba(220,60,60,0.2)',
-      svgBgInner:'#220808',svgBgOuter:'#0a0202',
-      zodiacFire:'#2e0a0a',zodiacEarth:'#220808',zodiacAir:'#1a0606',zodiacWater:'#140404',
-      zodiacFireS:'#cc3333',zodiacEarthS:'#aa2222',zodiacAirS:'#881111',zodiacWaterS:'#661111',
-      houseEven:'#160606',houseOdd:'#120404',innerCircle:'#0e0404',
-      signTextColor:'#ffaaaa',tickColor:'rgba(220,80,80,',dividerColor:'rgba(200,60,60,0.3)',
-      houseNumColor:'#993333',axisLineColor:'rgba(255,120,120,0.9)',axisLabelColor:'rgba(220,100,100,0.75)',
-      planetFill:'#220808',planetStroke:'rgba(220,80,80,0.85)',planetText:'#ffe0e0',
-      outerPlanetText:'#cc7777',outerPlanetLine:'rgba(200,60,60,0.25)',centerDot:'#ff9999',
-      titleColor:'#ff9999',subColor:'rgba(255,153,153,0.45)',
-      legendBg:'rgba(200,60,60,0.05)',legendBorder:'rgba(200,60,60,0.15)',
-      legendTitleColor:'#993333',legendNameColor:'rgba(255,180,180,0.85)',legendPosColor:'#772222',
-      tooltipBg:'#160606',tooltipBorder:'rgba(200,60,60,0.4)',tooltipText:'#ffe0e0',
-      aspectConj:'rgba(255,220,50,0.65)',aspectSext:'rgba(255,150,150,0.5)',
-      aspectSq:'rgba(255,60,60,0.6)',aspectTrine:'rgba(200,100,100,0.5)',aspectOpp:'rgba(255,60,60,0.65)',
-      isDark:true,
-    },
-    blue: {
-      bg:'#030a18',cardBg:'#05101f',cardBorder:'rgba(60,120,240,0.2)',
-      svgBgInner:'#0a1a3c',svgBgOuter:'#030a18',
-      zodiacFire:'#0a1230',zodiacEarth:'#081028',zodiacAir:'#060e22',zodiacWater:'#050c1e',
-      zodiacFireS:'#3366dd',zodiacEarthS:'#2255cc',zodiacAirS:'#4477ee',zodiacWaterS:'#1144bb',
-      houseEven:'#05101f',houseOdd:'#040d1a',innerCircle:'#030a18',
-      signTextColor:'#99ccff',tickColor:'rgba(80,150,255,',dividerColor:'rgba(60,120,240,0.3)',
-      houseNumColor:'#3366aa',axisLineColor:'rgba(120,180,255,0.9)',axisLabelColor:'rgba(100,160,240,0.75)',
-      planetFill:'#0a1a3c',planetStroke:'rgba(80,150,255,0.85)',planetText:'#ccddff',
-      outerPlanetText:'#6699cc',outerPlanetLine:'rgba(60,120,240,0.25)',centerDot:'#88bbff',
-      titleColor:'#88bbff',subColor:'rgba(136,187,255,0.45)',
-      legendBg:'rgba(60,120,240,0.05)',legendBorder:'rgba(60,120,240,0.15)',
-      legendTitleColor:'#3366aa',legendNameColor:'rgba(150,200,255,0.85)',legendPosColor:'#2255aa',
-      tooltipBg:'#05101f',tooltipBorder:'rgba(80,150,255,0.4)',tooltipText:'#ccddff',
-      aspectConj:'rgba(255,220,50,0.65)',aspectSext:'rgba(80,180,255,0.55)',
-      aspectSq:'rgba(255,100,100,0.5)',aspectTrine:'rgba(80,220,160,0.5)',aspectOpp:'rgba(255,100,100,0.55)',
-      isDark:true,
-    },
-    navy: {
-      bg:'#020810',cardBg:'#040e1c',cardBorder:'rgba(50,100,200,0.2)',
-      svgBgInner:'#071428',svgBgOuter:'#020810',
-      zodiacFire:'#08102a',zodiacEarth:'#060e22',zodiacAir:'#040c1e',zodiacWater:'#030a1a',
-      zodiacFireS:'#2255bb',zodiacEarthS:'#1144aa',zodiacAirS:'#3366cc',zodiacWaterS:'#1133aa',
-      houseEven:'#040e1c',houseOdd:'#030b18',innerCircle:'#020810',
-      signTextColor:'#8ab0e8',tickColor:'rgba(60,110,220,',dividerColor:'rgba(50,100,200,0.3)',
-      houseNumColor:'#2255aa',axisLineColor:'rgba(100,160,240,0.9)',axisLabelColor:'rgba(80,140,220,0.75)',
-      planetFill:'#071428',planetStroke:'rgba(60,120,220,0.85)',planetText:'#b8d0f4',
-      outerPlanetText:'#5588bb',outerPlanetLine:'rgba(50,100,200,0.25)',centerDot:'#6699dd',
-      titleColor:'#6699dd',subColor:'rgba(102,153,221,0.45)',
-      legendBg:'rgba(50,100,200,0.05)',legendBorder:'rgba(50,100,200,0.15)',
-      legendTitleColor:'#2255aa',legendNameColor:'rgba(140,180,240,0.85)',legendPosColor:'#1144aa',
-      tooltipBg:'#040e1c',tooltipBorder:'rgba(60,120,220,0.4)',tooltipText:'#b8d0f4',
-      aspectConj:'rgba(255,220,50,0.65)',aspectSext:'rgba(80,160,255,0.5)',
-      aspectSq:'rgba(255,100,100,0.5)',aspectTrine:'rgba(80,220,160,0.5)',aspectOpp:'rgba(255,100,100,0.55)',
-      isDark:true,
-    },
-    green: {
-      bg:'#030e06',cardBg:'#051408',cardBorder:'rgba(40,160,80,0.2)',
-      svgBgInner:'#081e0c',svgBgOuter:'#030e06',
-      zodiacFire:'#0a1e0c',zodiacEarth:'#081a0a',zodiacAir:'#061408',zodiacWater:'#041006',
-      zodiacFireS:'#33aa55',zodiacEarthS:'#228844',zodiacAirS:'#44bb66',zodiacWaterS:'#117733',
-      houseEven:'#051408',houseOdd:'#041006',innerCircle:'#030e06',
-      signTextColor:'#88ddaa',tickColor:'rgba(60,180,100,',dividerColor:'rgba(40,160,80,0.3)',
-      houseNumColor:'#228844',axisLineColor:'rgba(80,200,120,0.9)',axisLabelColor:'rgba(60,180,100,0.75)',
-      planetFill:'#081e0c',planetStroke:'rgba(60,180,100,0.85)',planetText:'#aaeebb',
-      outerPlanetText:'#44aa66',outerPlanetLine:'rgba(40,160,80,0.25)',centerDot:'#55cc77',
-      titleColor:'#55cc77',subColor:'rgba(85,204,119,0.45)',
-      legendBg:'rgba(40,160,80,0.05)',legendBorder:'rgba(40,160,80,0.15)',
-      legendTitleColor:'#228844',legendNameColor:'rgba(120,220,160,0.85)',legendPosColor:'#117733',
-      tooltipBg:'#051408',tooltipBorder:'rgba(60,180,100,0.4)',tooltipText:'#aaeebb',
-      aspectConj:'rgba(220,255,80,0.65)',aspectSext:'rgba(80,220,160,0.55)',
-      aspectSq:'rgba(255,100,80,0.5)',aspectTrine:'rgba(80,255,120,0.55)',aspectOpp:'rgba(255,100,80,0.6)',
-      isDark:true,
-    },
-    sage: {
-      bg:'#0a140a',cardBg:'#0e1a0e',cardBorder:'rgba(110,150,90,0.2)',
-      svgBgInner:'#142014',svgBgOuter:'#080e08',
-      zodiacFire:'#1a2a12',zodiacEarth:'#162414',zodiacAir:'#122012',zodiacWater:'#0e1c10',
-      zodiacFireS:'#7aaa55',zodiacEarthS:'#5a8a40',zodiacAirS:'#4a7a40',zodiacWaterS:'#3a6a40',
-      houseEven:'#0e1a0e',houseOdd:'#0c160c',innerCircle:'#0a140a',
-      signTextColor:'#b0d098',tickColor:'rgba(120,160,90,',dividerColor:'rgba(100,140,80,0.3)',
-      houseNumColor:'#5a8040',axisLineColor:'rgba(160,200,120,0.9)',axisLabelColor:'rgba(140,180,100,0.75)',
-      planetFill:'#142014',planetStroke:'rgba(120,160,90,0.85)',planetText:'#c8e0b0',
-      outerPlanetText:'#7aa060',outerPlanetLine:'rgba(100,140,80,0.25)',centerDot:'#a0c880',
-      titleColor:'#a0c880',subColor:'rgba(160,200,128,0.45)',
-      legendBg:'rgba(100,140,80,0.05)',legendBorder:'rgba(100,140,80,0.15)',
-      legendTitleColor:'#5a8040',legendNameColor:'rgba(160,200,120,0.85)',legendPosColor:'#447730',
-      tooltipBg:'#0e1a0e',tooltipBorder:'rgba(120,160,90,0.4)',tooltipText:'#c8e0b0',
-      aspectConj:'rgba(220,240,80,0.65)',aspectSext:'rgba(100,220,140,0.5)',
-      aspectSq:'rgba(240,120,80,0.5)',aspectTrine:'rgba(80,220,100,0.55)',aspectOpp:'rgba(240,120,80,0.6)',
-      isDark:true,
-    },
-    purple: {
-      bg:'#080510',cardBg:'#0d0818',cardBorder:'rgba(140,80,220,0.2)',
-      svgBgInner:'#140a28',svgBgOuter:'#060410',
-      zodiacFire:'#1e0828',zodiacEarth:'#14061e',zodiacAir:'#0e0418',zodiacWater:'#0a0415',
-      zodiacFireS:'#aa44dd',zodiacEarthS:'#7733bb',zodiacAirS:'#6622aa',zodiacWaterS:'#5522aa',
-      houseEven:'#0d0818',houseOdd:'#0a0614',innerCircle:'#080510',
-      signTextColor:'#d0a8ff',tickColor:'rgba(160,100,255,',dividerColor:'rgba(140,80,220,0.3)',
-      houseNumColor:'#7744aa',axisLineColor:'rgba(200,140,255,0.9)',axisLabelColor:'rgba(180,120,240,0.75)',
-      planetFill:'#140a28',planetStroke:'rgba(160,100,255,0.85)',planetText:'#ecd8ff',
-      outerPlanetText:'#aa77dd',outerPlanetLine:'rgba(140,80,220,0.25)',centerDot:'#cc88ff',
-      titleColor:'#cc88ff',subColor:'rgba(204,136,255,0.45)',
-      legendBg:'rgba(140,80,220,0.05)',legendBorder:'rgba(140,80,220,0.15)',
-      legendTitleColor:'#7744aa',legendNameColor:'rgba(210,160,255,0.85)',legendPosColor:'#6633aa',
-      tooltipBg:'#0d0818',tooltipBorder:'rgba(160,100,255,0.4)',tooltipText:'#ecd8ff',
-      aspectConj:'rgba(255,220,50,0.65)',aspectSext:'rgba(120,180,255,0.5)',
-      aspectSq:'rgba(255,80,80,0.55)',aspectTrine:'rgba(80,220,160,0.5)',aspectOpp:'rgba(255,80,80,0.6)',
-      isDark:true,
-    },
-    gold: {
-      bg:'#100c02',cardBg:'#181204',cardBorder:'rgba(200,160,40,0.2)',
-      svgBgInner:'#221a06',svgBgOuter:'#0c0802',
-      zodiacFire:'#2a1a04',zodiacEarth:'#201406',zodiacAir:'#160e04',zodiacWater:'#100a04',
-      zodiacFireS:'#cc9900',zodiacEarthS:'#aa7700',zodiacAirS:'#886600',zodiacWaterS:'#664400',
-      houseEven:'#181204',houseOdd:'#140e02',innerCircle:'#100c02',
-      signTextColor:'#ffda70',tickColor:'rgba(200,160,40,',dividerColor:'rgba(180,140,30,0.3)',
-      houseNumColor:'#886600',axisLineColor:'rgba(240,200,60,0.9)',axisLabelColor:'rgba(220,180,50,0.75)',
-      planetFill:'#221a06',planetStroke:'rgba(200,160,40,0.85)',planetText:'#fff0a0',
-      outerPlanetText:'#cc9933',outerPlanetLine:'rgba(180,140,30,0.25)',centerDot:'#ffcc40',
-      titleColor:'#ffcc40',subColor:'rgba(255,204,64,0.45)',
-      legendBg:'rgba(180,140,30,0.05)',legendBorder:'rgba(180,140,30,0.15)',
-      legendTitleColor:'#886600',legendNameColor:'rgba(255,210,100,0.85)',legendPosColor:'#664400',
-      tooltipBg:'#181204',tooltipBorder:'rgba(200,160,40,0.4)',tooltipText:'#fff0a0',
-      aspectConj:'rgba(255,220,50,0.7)',aspectSext:'rgba(200,180,80,0.5)',
-      aspectSq:'rgba(255,120,40,0.55)',aspectTrine:'rgba(160,200,80,0.5)',aspectOpp:'rgba(255,120,40,0.6)',
-      isDark:true,
-    },
-    orange: {
-      bg:'#100600',cardBg:'#180a00',cardBorder:'rgba(220,100,20,0.2)',
-      svgBgInner:'#201000',svgBgOuter:'#0c0400',
-      zodiacFire:'#2a1000',zodiacEarth:'#1e0c00',zodiacAir:'#160800',zodiacWater:'#100600',
-      zodiacFireS:'#ee6600',zodiacEarthS:'#cc5500',zodiacAirS:'#aa4400',zodiacWaterS:'#883300',
-      houseEven:'#180a00',houseOdd:'#140800',innerCircle:'#100600',
-      signTextColor:'#ffb060',tickColor:'rgba(220,100,20,',dividerColor:'rgba(200,80,10,0.3)',
-      houseNumColor:'#aa5500',axisLineColor:'rgba(255,150,50,0.9)',axisLabelColor:'rgba(220,120,40,0.75)',
-      planetFill:'#201000',planetStroke:'rgba(220,100,20,0.85)',planetText:'#ffe0a0',
-      outerPlanetText:'#cc7733',outerPlanetLine:'rgba(200,80,10,0.25)',centerDot:'#ff9940',
-      titleColor:'#ff9940',subColor:'rgba(255,153,64,0.45)',
-      legendBg:'rgba(200,80,10,0.05)',legendBorder:'rgba(200,80,10,0.15)',
-      legendTitleColor:'#aa5500',legendNameColor:'rgba(255,190,120,0.85)',legendPosColor:'#883300',
-      tooltipBg:'#180a00',tooltipBorder:'rgba(220,100,20,0.4)',tooltipText:'#ffe0a0',
-      aspectConj:'rgba(255,220,50,0.7)',aspectSext:'rgba(255,180,60,0.5)',
-      aspectSq:'rgba(255,80,40,0.55)',aspectTrine:'rgba(200,200,60,0.5)',aspectOpp:'rgba(255,80,40,0.6)',
-      isDark:true,
-    },
-    pink: {
-      bg:'#100408',cardBg:'#180610',cardBorder:'rgba(220,80,140,0.2)',
-      svgBgInner:'#200818',svgBgOuter:'#0c0208',
-      zodiacFire:'#280818',zodiacEarth:'#1e0614',zodiacAir:'#160410',zodiacWater:'#10040c',
-      zodiacFireS:'#dd4488',zodiacEarthS:'#bb3366',zodiacAirS:'#aa2255',zodiacWaterS:'#881144',
-      houseEven:'#180610',houseOdd:'#14040c',innerCircle:'#100408',
-      signTextColor:'#ffaacc',tickColor:'rgba(220,80,140,',dividerColor:'rgba(200,60,120,0.3)',
-      houseNumColor:'#aa3366',axisLineColor:'rgba(255,130,170,0.9)',axisLabelColor:'rgba(220,100,150,0.75)',
-      planetFill:'#200818',planetStroke:'rgba(220,80,140,0.85)',planetText:'#ffd0e0',
-      outerPlanetText:'#cc6699',outerPlanetLine:'rgba(200,60,120,0.25)',centerDot:'#ff88bb',
-      titleColor:'#ff88bb',subColor:'rgba(255,136,187,0.45)',
-      legendBg:'rgba(200,60,120,0.05)',legendBorder:'rgba(200,60,120,0.15)',
-      legendTitleColor:'#aa3366',legendNameColor:'rgba(255,180,210,0.85)',legendPosColor:'#881144',
-      tooltipBg:'#180610',tooltipBorder:'rgba(220,80,140,0.4)',tooltipText:'#ffd0e0',
-      aspectConj:'rgba(255,220,50,0.65)',aspectSext:'rgba(200,120,220,0.5)',
-      aspectSq:'rgba(255,60,100,0.55)',aspectTrine:'rgba(200,100,180,0.5)',aspectOpp:'rgba(255,60,100,0.6)',
-      isDark:true,
-    },
-    teal: {
-      bg:'#020e0e',cardBg:'#041414',cardBorder:'rgba(30,160,160,0.2)',
-      svgBgInner:'#061e1e',svgBgOuter:'#020c0c',
-      zodiacFire:'#081e1e',zodiacEarth:'#061818',zodiacAir:'#041414',zodiacWater:'#031010',
-      zodiacFireS:'#22aaaa',zodiacEarthS:'#119999',zodiacAirS:'#33bbbb',zodiacWaterS:'#118888',
-      houseEven:'#041414',houseOdd:'#031010',innerCircle:'#020e0e',
-      signTextColor:'#77dddd',tickColor:'rgba(40,180,180,',dividerColor:'rgba(30,160,160,0.3)',
-      houseNumColor:'#228888',axisLineColor:'rgba(80,200,200,0.9)',axisLabelColor:'rgba(60,180,180,0.75)',
-      planetFill:'#061e1e',planetStroke:'rgba(40,180,180,0.85)',planetText:'#aaeee',
-      outerPlanetText:'#44aaaa',outerPlanetLine:'rgba(30,160,160,0.25)',centerDot:'#44cccc',
-      titleColor:'#44cccc',subColor:'rgba(68,204,204,0.45)',
-      legendBg:'rgba(30,160,160,0.05)',legendBorder:'rgba(30,160,160,0.15)',
-      legendTitleColor:'#228888',legendNameColor:'rgba(100,220,220,0.85)',legendPosColor:'#116666',
-      tooltipBg:'#041414',tooltipBorder:'rgba(40,180,180,0.4)',tooltipText:'#aaeee0',
-      aspectConj:'rgba(220,255,80,0.65)',aspectSext:'rgba(80,220,220,0.55)',
-      aspectSq:'rgba(255,100,80,0.5)',aspectTrine:'rgba(80,255,200,0.55)',aspectOpp:'rgba(255,100,80,0.6)',
-      isDark:true,
-    },
-    black: {
-      bg:'#000000',cardBg:'#0a0a0a',cardBorder:'rgba(255,255,255,0.1)',
-      svgBgInner:'#111111',svgBgOuter:'#000000',
-      zodiacFire:'#1a1a1a',zodiacEarth:'#141414',zodiacAir:'#181818',zodiacWater:'#121212',
-      zodiacFireS:'rgba(255,255,255,0.5)',zodiacEarthS:'rgba(255,255,255,0.4)',
-      zodiacAirS:'rgba(255,255,255,0.45)',zodiacWaterS:'rgba(255,255,255,0.35)',
-      houseEven:'#0d0d0d',houseOdd:'#0a0a0a',innerCircle:'#000000',
-      signTextColor:'#ffffff',tickColor:'rgba(255,255,255,',dividerColor:'rgba(255,255,255,0.15)',
-      houseNumColor:'#666666',axisLineColor:'rgba(255,255,255,0.9)',axisLabelColor:'rgba(255,255,255,0.7)',
-      planetFill:'#111111',planetStroke:'rgba(255,255,255,0.6)',planetText:'#ffffff',
-      outerPlanetText:'#aaaaaa',outerPlanetLine:'rgba(255,255,255,0.2)',centerDot:'#ffffff',
-      titleColor:'#ffffff',subColor:'rgba(255,255,255,0.4)',
-      legendBg:'rgba(255,255,255,0.03)',legendBorder:'rgba(255,255,255,0.08)',
-      legendTitleColor:'#555555',legendNameColor:'rgba(255,255,255,0.8)',legendPosColor:'#444444',
-      tooltipBg:'#111111',tooltipBorder:'rgba(255,255,255,0.2)',tooltipText:'#ffffff',
-      aspectConj:'rgba(255,255,255,0.55)',aspectSext:'rgba(180,180,255,0.5)',
-      aspectSq:'rgba(255,100,100,0.55)',aspectTrine:'rgba(100,220,150,0.5)',aspectOpp:'rgba(255,100,100,0.55)',
-      isDark:true,
-    },
-    white: {
-      bg:'#f0ece0',cardBg:'#faf7f0',cardBorder:'rgba(0,0,0,0.07)',
-      svgBgInner:'#e8e0cc',svgBgOuter:'#f0ece0',
-      zodiacFire:'#f5d0c8',zodiacEarth:'#d0e8c8',zodiacAir:'#c8d8f0',zodiacWater:'#c8e8f0',
-      zodiacFireS:'#cc4444',zodiacEarthS:'#448844',zodiacAirS:'#4466cc',zodiacWaterS:'#3399bb',
-      houseEven:'#eee8d8',houseOdd:'#ebe5d2',innerCircle:'#f5f0e4',
-      signTextColor:'#222222',tickColor:'rgba(0,0,0,',dividerColor:'rgba(0,0,0,0.15)',
-      houseNumColor:'#888888',axisLineColor:'rgba(0,0,0,0.8)',axisLabelColor:'rgba(0,0,0,0.6)',
-      planetFill:'#ffffff',planetStroke:'rgba(0,0,0,0.3)',planetText:'#111111',
-      outerPlanetText:'#555555',outerPlanetLine:'rgba(0,0,0,0.15)',centerDot:'#222222',
-      titleColor:'#1a1a1a',subColor:'rgba(0,0,0,0.4)',
-      legendBg:'#ffffff',legendBorder:'rgba(0,0,0,0.07)',
-      legendTitleColor:'#777777',legendNameColor:'rgba(0,0,0,0.75)',legendPosColor:'#999999',
-      tooltipBg:'#ffffff',tooltipBorder:'rgba(0,0,0,0.15)',tooltipText:'#111111',
-      aspectConj:'rgba(180,140,0,0.55)',aspectSext:'rgba(50,100,200,0.45)',
-      aspectSq:'rgba(200,50,50,0.45)',aspectTrine:'rgba(50,160,90,0.45)',aspectOpp:'rgba(200,50,50,0.5)',
-      isDark:false,
-    },
-    warm: {
-      bg:'#120d04',cardBg:'#1a1408',cardBorder:'rgba(200,150,60,0.2)',
-      svgBgInner:'#241a08',svgBgOuter:'#120d04',
-      zodiacFire:'#2e1a06',zodiacEarth:'#221608',zodiacAir:'#161408',zodiacWater:'#0e1008',
-      zodiacFireS:'#d4900c',zodiacEarthS:'#aa8830',zodiacAirS:'#7080b0',zodiacWaterS:'#3080a0',
-      houseEven:'#1a1408',houseOdd:'#161008',innerCircle:'#100c04',
-      signTextColor:'#f0d880',tickColor:'rgba(200,160,60,',dividerColor:'rgba(180,140,40,0.3)',
-      houseNumColor:'#a07030',axisLineColor:'rgba(240,200,80,0.9)',axisLabelColor:'rgba(220,180,70,0.75)',
-      planetFill:'#241a08',planetStroke:'rgba(200,160,60,0.85)',planetText:'#fce8a0',
-      outerPlanetText:'#c0a050',outerPlanetLine:'rgba(180,140,40,0.25)',centerDot:'#f0d060',
-      titleColor:'#f0d060',subColor:'rgba(240,208,96,0.45)',
-      legendBg:'rgba(180,140,40,0.05)',legendBorder:'rgba(180,140,40,0.12)',
-      legendTitleColor:'#a07030',legendNameColor:'rgba(240,208,96,0.85)',legendPosColor:'#886020',
-      tooltipBg:'#1a1408',tooltipBorder:'rgba(200,160,60,0.4)',tooltipText:'#fce8a0',
-      aspectConj:'rgba(255,220,50,0.7)',aspectSext:'rgba(200,180,80,0.5)',
-      aspectSq:'rgba(255,120,40,0.55)',aspectTrine:'rgba(160,200,80,0.5)',aspectOpp:'rgba(255,120,40,0.6)',
-      isDark:true,
-    },
-    cosmic: {
-      bg:'#07000f',cardBg:'#0d0020',cardBorder:'rgba(180,100,255,0.2)',
-      svgBgInner:'#150030',svgBgOuter:'#07000f',
-      zodiacFire:'#200030',zodiacEarth:'#0a1a00',zodiacAir:'#001530',zodiacWater:'#001530',
-      zodiacFireS:'#cc44ff',zodiacEarthS:'#44cc88',zodiacAirS:'#44aaff',zodiacWaterS:'#44ccff',
-      houseEven:'#0d0020',houseOdd:'#0a001a',innerCircle:'#07000f',
-      signTextColor:'#e0ccff',tickColor:'rgba(180,100,255,',dividerColor:'rgba(160,80,240,0.25)',
-      houseNumColor:'#8855cc',axisLineColor:'rgba(220,180,255,0.9)',axisLabelColor:'rgba(200,160,255,0.75)',
-      planetFill:'#150030',planetStroke:'rgba(180,100,255,0.9)',planetText:'#f0e0ff',
-      outerPlanetText:'#aa77dd',outerPlanetLine:'rgba(160,80,240,0.2)',centerDot:'#dd99ff',
-      titleColor:'#dd99ff',subColor:'rgba(221,153,255,0.45)',
-      legendBg:'rgba(160,80,240,0.05)',legendBorder:'rgba(160,80,240,0.15)',
-      legendTitleColor:'#8855cc',legendNameColor:'rgba(220,180,255,0.85)',legendPosColor:'#7744bb',
-      tooltipBg:'#0d0020',tooltipBorder:'rgba(180,100,255,0.4)',tooltipText:'#f0e0ff',
-      aspectConj:'rgba(255,220,50,0.65)',aspectSext:'rgba(50,200,255,0.5)',
-      aspectSq:'rgba(255,80,80,0.5)',aspectTrine:'rgba(80,255,160,0.5)',aspectOpp:'rgba(255,80,80,0.55)',
-      isDark:true,
-    },
-    neon: {
-      bg:'#000008',cardBg:'#04000e',cardBorder:'rgba(0,255,200,0.2)',
-      svgBgInner:'#080020',svgBgOuter:'#000008',
-      zodiacFire:'#0c0020',zodiacEarth:'#001808',zodiacAir:'#000c20',zodiacWater:'#001020',
-      zodiacFireS:'#00ffcc',zodiacEarthS:'#00ff88',zodiacAirS:'#0088ff',zodiacWaterS:'#00ccff',
-      houseEven:'#04000e',houseOdd:'#03000c',innerCircle:'#000008',
-      signTextColor:'#00ffee',tickColor:'rgba(0,240,200,',dividerColor:'rgba(0,220,180,0.3)',
-      houseNumColor:'#008888',axisLineColor:'rgba(0,255,200,0.9)',axisLabelColor:'rgba(0,220,180,0.75)',
-      planetFill:'#080020',planetStroke:'rgba(0,255,200,0.9)',planetText:'#ccffee',
-      outerPlanetText:'#00cc99',outerPlanetLine:'rgba(0,200,160,0.25)',centerDot:'#00ffcc',
-      titleColor:'#00ffcc',subColor:'rgba(0,255,204,0.45)',
-      legendBg:'rgba(0,220,180,0.05)',legendBorder:'rgba(0,220,180,0.15)',
-      legendTitleColor:'#008888',legendNameColor:'rgba(0,240,200,0.85)',legendPosColor:'#006666',
-      tooltipBg:'#04000e',tooltipBorder:'rgba(0,255,200,0.4)',tooltipText:'#ccffee',
-      aspectConj:'rgba(255,255,0,0.7)',aspectSext:'rgba(0,200,255,0.55)',
-      aspectSq:'rgba(255,0,100,0.55)',aspectTrine:'rgba(0,255,120,0.55)',aspectOpp:'rgba(255,0,100,0.6)',
-      isDark:true,
-    },
+  const isLight = C1.isLight || false
+  const H1 = C1.h
+  const H2 = C2 ? C2.h : (H1 + 30) % 360
+
+  const accentMid   = C2 ? C2.mid   : C1.mid
+  const accentLight = C2 ? C2.light : C1.light
+  const accentText  = C2 ? C2.text  : C1.text
+
+  const bg     = C1.dark
+  const cardBg = isLight ? '#ffffff' : (() => {
+    // slightly lighter than bg for card
+    const rgb = hexToRgb(C1.dark).split(',').map(Number)
+    const bump = rgb.map(v => Math.min(255, v + 12))
+    return `rgb(${bump.join(',')})`
+  })()
+
+  const zodiacFire  = isLight ? hslStr(H1, 30, 88) : hslStr(H1,         40, 10)
+  const zodiacEarth = isLight ? hslStr(H2, 25, 85) : hslStr(H2,         35,  9)
+  const zodiacAir   = isLight ? hslStr((H1+H2)/2, 20, 90) : hslStr((H1+H2)/2, 30, 8)
+  const zodiacWater = isLight ? hslStr(H2, 20, 87) : hslStr(H2,         25,  7)
+
+  const zodiacFireS  = isLight ? hslStr(H1, 60, 45) : hslStr(H1,         65, 50)
+  const zodiacEarthS = isLight ? hslStr(H2, 50, 40) : hslStr(H2,         55, 42)
+  const zodiacAirS   = isLight ? hslStr((H1+H2)/2, 45, 48) : hslStr((H1+H2)/2, 50, 48)
+  const zodiacWaterS = isLight ? hslStr(H2, 40, 42) : hslStr(H2,         45, 38)
+
+  return {
+    bg,
+    cardBg,
+    cardBorder:     `rgba(${hexToRgb(accentMid)},0.2)`,
+    svgBgInner:     isLight ? hslStr(H1, 20, 92) : hslStr(H1, 40, 8),
+    svgBgOuter:     bg,
+    zodiacFire, zodiacEarth, zodiacAir, zodiacWater,
+    zodiacFireS, zodiacEarthS, zodiacAirS, zodiacWaterS,
+    houseEven:      isLight ? hslStr(H1, 15, 94) : hslStr(H1, 30, 7),
+    houseOdd:       isLight ? hslStr(H1, 10, 91) : hslStr(H1, 25, 6),
+    innerCircle:    isLight ? hslStr(H1, 10, 97) : C1.dark,
+    signTextColor:  isLight ? '#111111' : accentText,
+    tickColor:      isLight ? 'rgba(0,0,0,' : `rgba(${hexToRgb(accentMid)},`,
+    dividerColor:   `rgba(${hexToRgb(accentMid)},${isLight ? '0.25' : '0.3'})`,
+    houseNumColor:  isLight ? hslStr(H1, 30, 40) : hslStr(H1, 40, 50),
+    axisLineColor:  isLight ? 'rgba(0,0,0,0.85)' : `rgba(${hexToRgb(accentLight)},0.9)`,
+    axisLabelColor: isLight ? 'rgba(0,0,0,0.6)'  : `rgba(${hexToRgb(accentLight)},0.7)`,
+    planetFill:     isLight ? '#ffffff' : hslStr(H1, 35, 10),
+    planetStroke:   `rgba(${hexToRgb(accentMid)},0.9)`,
+    planetText:     isLight ? '#111111' : accentText,
+    outerPlanetText: isLight ? hslStr(H2, 40, 35) : hslStr(H2, 50, 60),
+    outerPlanetLine: `rgba(${hexToRgb(accentMid)},0.3)`,
+    centerDot:      accentLight,
+    titleColor:     isLight ? '#111111' : accentLight,
+    subColor:       isLight ? 'rgba(0,0,0,0.5)' : `rgba(${hexToRgb(accentLight)},0.5)`,
+    legendBg:       isLight ? '#ffffff' : `rgba(${hexToRgb(accentMid)},0.04)`,
+    legendBorder:   isLight ? 'rgba(0,0,0,0.08)' : `rgba(${hexToRgb(accentMid)},0.15)`,
+    legendTitleColor: isLight ? hslStr(H1, 30, 40) : hslStr(H1, 35, 50),
+    legendNameColor:  isLight ? 'rgba(0,0,0,0.78)' : `rgba(${hexToRgb(accentText)},0.88)`,
+    legendPosColor:   isLight ? hslStr(H1, 20, 50) : hslStr(H1, 25, 45),
+    tooltipBg:      isLight ? '#ffffff' : hslStr(H1, 35, 8),
+    tooltipBorder:  `rgba(${hexToRgb(accentMid)},0.4)`,
+    tooltipText:    isLight ? '#111111' : accentText,
+    aspectConj:     'rgba(255,220,50,0.7)',
+    aspectSext:     C2 ? `rgba(${hexToRgb(C2.light)},0.55)` : `rgba(${hexToRgb(accentLight)},0.5)`,
+    aspectSq:       'rgba(255,80,80,0.55)',
+    aspectTrine:    'rgba(80,220,140,0.5)',
+    aspectOpp:      'rgba(255,80,80,0.62)',
+    isDark:         !isLight,
   }
-
-  // Return first matched single color theme
-  for (const id of colorIds) {
-    if (singleThemes[id]) return singleThemes[id]
-  }
-
-  // Fallback random pool (excluding black to avoid always black)
-  const randomPool = ['blue','navy','purple','teal','cosmic','warm','green','red','gold']
-  const pick = randomPool[Math.floor(Math.random() * randomPool.length)]
-  return singleThemes[pick]
 }
 
-// Main theme picker — explicit colors take priority
 function pickChartTheme(prompt) {
-  const colorIds = parseExplicitColors(prompt)
-  if (colorIds.length > 0) {
-    return buildThemeFromColors(colorIds, prompt)
-  }
-  // No explicit colors — pick randomly from varied pool
-  const randomThemes = ['blue','navy','purple','teal','cosmic','warm','green','red','gold','sage','pink','orange']
-  const pick = randomThemes[Math.floor(Math.random() * randomThemes.length)]
-  return buildThemeFromColors([pick], prompt)
+  const colorIds = parseChartColors(prompt)
+  return buildChartTheme(colorIds)
+}
+
+// ─── Sign Display Mode ────────────────────────────────────────────────────────
+
+function parseSignDisplayMode(prompt) {
+  const lower = prompt.toLowerCase()
+  if (
+    lower.includes('sign name and icon') || lower.includes('icon and name') ||
+    lower.includes('both sign') || lower.includes('glyph and name') ||
+    lower.includes('name and glyph') || lower.includes('symbol and name') ||
+    lower.includes('name and symbol') || lower.includes('show both')
+  ) return 'both'
+  if (
+    lower.includes('sign name') || lower.includes('text sign') ||
+    lower.includes('written sign') || lower.includes('spelled out') ||
+    lower.includes('name only') || lower.includes('just the name')
+  ) return 'name'
+  return 'glyph'
 }
 
 // ─── Data Extraction ──────────────────────────────────────────────────────────
@@ -684,30 +503,33 @@ function extractBirthChartData(prompt) {
     const m = line.match(re)
     if (!m) continue
     let name = m[1].trim()
-      .replace(/\s*\(R\)\s*/gi,'').replace(/\s*\(AC\)\s*/gi,'')
-      .replace(/\s*\(MC\)\s*/gi,'').replace(/\s*\(Black Moon\)\s*/gi,'').trim()
-    if (/rising\s*sign/i.test(name)||/^ascendant/i.test(name)) name='Ascendant'
-    if (/^midheaven/i.test(name)) name='Midheaven'
-    if (/north\s*node/i.test(name)) name='North Node'
-    if (/south\s*node/i.test(name)) name='South Node'
-    if (/lilith/i.test(name)) name='Lilith'
-    if (/pallas/i.test(name)) name='Pallas Athena'
-    if (/pholus/i.test(name)) name='Pholus'
+      .replace(/\s*\(R\)\s*/gi, '').replace(/\s*\(AC\)\s*/gi, '')
+      .replace(/\s*\(MC\)\s*/gi, '').replace(/\s*\(Black Moon\)\s*/gi, '').trim()
+    if (/rising\s*sign/i.test(name) || /^ascendant/i.test(name)) name = 'Ascendant'
+    if (/^midheaven/i.test(name))   name = 'Midheaven'
+    if (/north\s*node/i.test(name)) name = 'North Node'
+    if (/south\s*node/i.test(name)) name = 'South Node'
+    if (/lilith/i.test(name))       name = 'Lilith'
+    if (/pallas/i.test(name))       name = 'Pallas Athena'
+    if (/pholus/i.test(name))       name = 'Pholus'
+
     const signRaw = m[2]
-    const sign = signRaw[0].toUpperCase() + signRaw.slice(1).toLowerCase()
-    const deg = parseInt(m[3]||'0',10)
-    const min = parseInt(m[4]||'0',10)
-    const base = SIGN_BASE_DEGS[sign.toLowerCase()]??0
-    const absolute = base + deg + min/60
+    const sign    = signRaw[0].toUpperCase() + signRaw.slice(1).toLowerCase()
+    const deg     = parseInt(m[3] || '0', 10)
+    const min     = parseInt(m[4] || '0', 10)
+    const base    = SIGN_BASE_DEGS[sign.toLowerCase()] ?? 0
+    const absolute = base + deg + min / 60
+
     const isRetrograde = /\(R\)/i.test(line)
-    const houseMatch = line.match(/\((\d{1,2})(?:st|nd|rd|th)?\s*[Hh]ouse\)/)
-    const houseNum = houseMatch ? parseInt(houseMatch[1],10) : null
+    const houseMatch   = line.match(/\((\d{1,2})(?:st|nd|rd|th)?\s*[Hh]ouse\)/)
+    const houseNum     = houseMatch ? parseInt(houseMatch[1], 10) : null
+
     placements.push({
       name, sign,
-      glyph: PLANET_GLYPHS[name]||'•',
-      signGlyph: SIGN_GLYPHS[sign]||'',
+      glyph:     PLANET_GLYPHS[name] || '•',
+      signGlyph: SIGN_GLYPHS[sign]   || '',
       absolute, deg, min,
-      label: `${deg}°${String(min).padStart(2,'0')}'`,
+      label: `${deg}°${String(min).padStart(2, '0')}'`,
       isRetrograde, houseNum,
       isOuter: OUTER_BODIES.has(name),
     })
@@ -723,8 +545,10 @@ function extractHouseCusps(placements) {
   const ic   = (mc + 180) % 360
   const dsc  = (asc + 180) % 360
   function bwd(f, t) { return (((f - t) % 360) + 360) % 360 }
-  const s14  = bwd(asc, ic), s47 = bwd(ic, dsc)
-  const s710 = bwd(dsc, mc), s101 = bwd(mc, asc)
+  const s14  = bwd(asc, ic)
+  const s47  = bwd(ic, dsc)
+  const s710 = bwd(dsc, mc)
+  const s101 = bwd(mc, asc)
   return [
     asc,
     ((asc - s14  * 0.36 + 360) % 360),
@@ -743,163 +567,152 @@ function extractHouseCusps(placements) {
 
 // ─── SVG Math ─────────────────────────────────────────────────────────────────
 
-function e2s(ecl, asc) { return (((asc-ecl+270)%360)+360)%360 }
-function polar(a,r,cx,cy) {
-  const rad=(a-90)*Math.PI/180
-  return {x:cx+r*Math.cos(rad), y:cy+r*Math.sin(rad)}
+function e2s(ecl, asc) { return (((asc - ecl + 270) % 360) + 360) % 360 }
+function polar(a, r, cx, cy) {
+  const rad = (a - 90) * Math.PI / 180
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) }
 }
-function arc(a1,a2,ro,ri,cx,cy) {
-  let end=a2; while(end<=a1) end+=360
-  const span=end-a1, lg=span>180?1:0
-  const p1=polar(a1,ro,cx,cy), p2=polar(a1+span,ro,cx,cy)
-  const p3=polar(a1+span,ri,cx,cy), p4=polar(a1,ri,cx,cy)
+function arc(a1, a2, ro, ri, cx, cy) {
+  let end = a2
+  while (end <= a1) end += 360
+  const span = end - a1
+  const lg   = span > 180 ? 1 : 0
+  const p1   = polar(a1,        ro, cx, cy)
+  const p2   = polar(a1 + span, ro, cx, cy)
+  const p3   = polar(a1 + span, ri, cx, cy)
+  const p4   = polar(a1,        ri, cx, cy)
   return `M${p1.x.toFixed(2)} ${p1.y.toFixed(2)} A${ro} ${ro} 0 ${lg} 1 ${p2.x.toFixed(2)} ${p2.y.toFixed(2)} L${p3.x.toFixed(2)} ${p3.y.toFixed(2)} A${ri} ${ri} 0 ${lg} 0 ${p4.x.toFixed(2)} ${p4.y.toFixed(2)}Z`
 }
 
 // ─── Chart Builder ────────────────────────────────────────────────────────────
 
 function buildBirthChartHTML(prompt) {
-  const placements = extractBirthChartData(prompt)
-  const T = pickChartTheme(prompt)
-  const houseCusps = extractHouseCusps(placements)
+  const placements  = extractBirthChartData(prompt)
+  const T           = pickChartTheme(prompt)
+  const houseCusps  = extractHouseCusps(placements)
+  const signMode    = parseSignDisplayMode(prompt)
 
   const ascP = placements.find(p => p.name === 'Ascendant')
   const mcP  = placements.find(p => p.name === 'Midheaven')
   const ASC  = ascP ? ascP.absolute : 0
   const MC   = mcP  ? mcP.absolute  : (ASC + 270) % 360
 
-  const SIZE = 580, cx = SIZE / 2, cy = SIZE / 2
+  const SIZE = 580
+  const cx   = SIZE / 2
+  const cy   = SIZE / 2
+  const lower = prompt.toLowerCase()
 
-  // ─── FIX 1: lower is not defined in this scope — define it here ──────────
-  const lower = prompt.toLowerCase().replace(/\s+/g, ' ').trim()
-
-  // ─── FIX 2: showHouseNums — too broad, "show" and "display" match 
-  //            almost every prompt and still randomly skips. Tighten it. ───
+  // House number visibility
   const showHouseNums =
     lower.includes('house number') ||
     lower.includes('house numbers') ||
     lower.includes('numbered house') ||
     lower.includes('show house') ||
     lower.includes('display house') ||
-    Math.random() > 0.35
+    Math.random() > 0.4
 
-  // ─── FIX 3: Remove the redundant CHART_STYLES block — it was declared  ───
-  //            but strokeWidth and ringGap were never actually used anywhere.
-  //            It was dead code that cluttered the scope.
-  //            The SV object below handles all style variation correctly. ───
-
-  // ─── Style variants — safe, tested values only ───────────────────────────
+  // Style variants
   const STYLE_VARIANTS = [
-    {
-      // Classic — original working proportions
-      zodiacRingWidth: 40,
-      houseRingWidth: 49,
-      planetRingR: 133,
-      aspectRingR: 104,
-      zodiacFontSize: 16,
-      showDegreeMarks: true,
-      spokeOpacity: 0.7,
-      axisWeight: 1.8,
-    },
-    {
-      // Minimal — thinner rings, stronger axes
-      zodiacRingWidth: 36,
-      houseRingWidth: 44,
-      planetRingR: 130,
-      aspectRingR: 100,
-      zodiacFontSize: 14,
-      showDegreeMarks: true,
-      spokeOpacity: 0.45,
-      axisWeight: 2.4,
-    },
-    {
-      // Bold — wider rings, larger glyphs
-      zodiacRingWidth: 46,
-      houseRingWidth: 52,
-      planetRingR: 122,
-      aspectRingR: 94,
-      zodiacFontSize: 18,
-      showDegreeMarks: false,
-      spokeOpacity: 0.85,
-      axisWeight: 2.8,
-    },
-    {
-      // Compact — tight rings, more inner space for aspects
-      zodiacRingWidth: 34,
-      houseRingWidth: 42,
-      planetRingR: 136,
-      aspectRingR: 108,
-      zodiacFontSize: 13,
-      showDegreeMarks: true,
-      spokeOpacity: 0.5,
-      axisWeight: 1.6,
-    },
+    { zodiacRingWidth:40, houseRingWidth:49, planetRingR:133, aspectRingR:104, zodiacFontSize:16, showDegreeMarks:true,  spokeOpacity:0.7,  axisWeight:1.8 },
+    { zodiacRingWidth:36, houseRingWidth:44, planetRingR:130, aspectRingR:100, zodiacFontSize:14, showDegreeMarks:true,  spokeOpacity:0.45, axisWeight:2.4 },
+    { zodiacRingWidth:46, houseRingWidth:52, planetRingR:122, aspectRingR:94,  zodiacFontSize:18, showDegreeMarks:false, spokeOpacity:0.85, axisWeight:2.8 },
+    { zodiacRingWidth:34, houseRingWidth:42, planetRingR:136, aspectRingR:108, zodiacFontSize:13, showDegreeMarks:true,  spokeOpacity:0.5,  axisWeight:1.6 },
   ]
-
   const SV = STYLE_VARIANTS[Math.floor(Math.random() * STYLE_VARIANTS.length)]
 
-  // ─── FIX 4: Radii must stay internally consistent ─────────────────────────
-  //            R_HOU_I must always leave room for R_PLN and R_ASP inside it.
-  //            Guard against any variant making R_HOU_I smaller than R_PLN. ──
   const R_OUT   = 254
   const R_ZIN   = R_OUT - SV.zodiacRingWidth
   const R_HOU_O = R_ZIN - 3
   const R_HOU_I = R_HOU_O - SV.houseRingWidth
-  const R_PLN   = Math.min(SV.planetRingR, R_HOU_I - 20)   // ← guard
-  const R_ASP   = Math.min(SV.aspectRingR, R_PLN - 20)     // ← guard
+  const R_PLN   = Math.min(SV.planetRingR, R_HOU_I - 20)
+  const R_ASP   = Math.min(SV.aspectRingR, R_PLN - 22)
+  const PLANET_R = 13
 
-  // ─── Zodiac ring ──────────────────────────────────────────────────────────
+  // ─── Sign label renderer ────────────────────────────────────────────────────
+  function renderSignLabel(sign, midR, svgMidAngle) {
+    const mp       = polar(svgMidAngle, midR, cx, cy)
+    const color    = T.signTextColor
+    const fontSize = SV.zodiacFontSize
+
+    if (signMode === 'name') {
+      const nameSize = Math.max(7, fontSize - 5)
+      return `<text x="${mp.x.toFixed(2)}" y="${mp.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${color}" font-size="${nameSize}" font-family="sans-serif" font-weight="500">${sign}</text>`
+    }
+    if (signMode === 'both') {
+      const glyphPos = polar(svgMidAngle, midR + 7, cx, cy)
+      const namePos  = polar(svgMidAngle, midR - 7, cx, cy)
+      const nameSize = Math.max(6, fontSize - 6)
+      return `<text x="${glyphPos.x.toFixed(2)}" y="${glyphPos.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${color}" font-size="${Math.max(10, fontSize - 2)}" font-family="serif">${SIGN_GLYPHS[sign]}</text>
+<text x="${namePos.x.toFixed(2)}" y="${namePos.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${color}" font-size="${nameSize}" font-family="sans-serif" font-weight="500" opacity="0.85">${sign}</text>`
+    }
+    // default: glyph only
+    return `<text x="${mp.x.toFixed(2)}" y="${mp.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${color}" font-size="${fontSize}" font-family="serif">${SIGN_GLYPHS[sign]}</text>`
+  }
+
+  // ─── Zodiac ring ────────────────────────────────────────────────────────────
   const zodSVG = ZODIAC_ORDER.map(sign => {
     const se   = SIGN_BASE_DEGS[sign.toLowerCase()]
-    const svgA = e2s(se, ASC), svgB = e2s(se + 30, ASC), svgM = e2s(se + 15, ASC)
+    const svgA = e2s(se, ASC)
+    const svgB = e2s(se + 30, ASC)
+    const svgM = e2s(se + 15, ASC)
     const el   = SIGN_ELEMENTS[sign]
-    const fill   = el==='Fire' ? T.zodiacFire  : el==='Earth' ? T.zodiacEarth  : el==='Air' ? T.zodiacAir  : T.zodiacWater
-    const stroke = el==='Fire' ? T.zodiacFireS : el==='Earth' ? T.zodiacEarthS : el==='Air' ? T.zodiacAirS : T.zodiacWaterS
-    const d  = arc(svgB, svgA, R_OUT, R_ZIN, cx, cy)
-    const mp = polar(svgM, (R_OUT + R_ZIN) / 2, cx, cy)
-    const sw = SV.spokeOpacity > 0.6 ? 1.2 : 0.9
+    const fill   = el === 'Fire' ? T.zodiacFire  : el === 'Earth' ? T.zodiacEarth  : el === 'Air' ? T.zodiacAir  : T.zodiacWater
+    const stroke = el === 'Fire' ? T.zodiacFireS : el === 'Earth' ? T.zodiacEarthS : el === 'Air' ? T.zodiacAirS : T.zodiacWaterS
+    const d      = arc(svgB, svgA, R_OUT, R_ZIN, cx, cy)
+    const midR   = (R_OUT + R_ZIN) / 2
+    const sw     = SV.spokeOpacity > 0.6 ? 1.2 : 0.9
     return `<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
-<text x="${mp.x.toFixed(2)}" y="${mp.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${T.signTextColor}" font-size="${SV.zodiacFontSize}" font-family="serif">${SIGN_GLYPHS[sign]}</text>`
+${renderSignLabel(sign, midR, svgM)}`
   }).join('\n')
 
-  // ─── Degree ticks ─────────────────────────────────────────────────────────
-  const tickSVG = SV.showDegreeMarks ? Array.from({ length: 360 }, (_, i) => {
-    const sv  = e2s(i, ASC)
-    const maj = i % 10 === 0, mid = i % 5 === 0
-    const r1  = polar(sv, R_ZIN, cx, cy)
-    const r2  = polar(sv, R_ZIN - (maj ? 10 : mid ? 6 : 3), cx, cy)
-    const op  = maj ? 0.6 : mid ? 0.3 : 0.15
-    return `<line x1="${r1.x.toFixed(2)}" y1="${r1.y.toFixed(2)}" x2="${r2.x.toFixed(2)}" y2="${r2.y.toFixed(2)}" stroke="${T.tickColor}${op})" stroke-width="${maj ? 1 : 0.6}"/>`
-  }).join('\n') : ''
+  // ─── Degree ticks ───────────────────────────────────────────────────────────
+  const tickSVG = SV.showDegreeMarks
+    ? Array.from({ length: 360 }, (_, i) => {
+        const sv  = e2s(i, ASC)
+        const maj = i % 10 === 0
+        const mid = i % 5 === 0
+        const r1  = polar(sv, R_ZIN, cx, cy)
+        const r2  = polar(sv, R_ZIN - (maj ? 10 : mid ? 6 : 3), cx, cy)
+        const op  = maj ? 0.6 : mid ? 0.3 : 0.15
+        return `<line x1="${r1.x.toFixed(2)}" y1="${r1.y.toFixed(2)}" x2="${r2.x.toFixed(2)}" y2="${r2.y.toFixed(2)}" stroke="${T.tickColor}${op})" stroke-width="${maj ? 1 : 0.6}"/>`
+      }).join('\n')
+    : ''
 
-  // ─── Sign boundary spokes ─────────────────────────────────────────────────
+  // ─── Sign boundary spokes ───────────────────────────────────────────────────
   const spokeSVG = ZODIAC_ORDER.map(sign => {
     const sv = e2s(SIGN_BASE_DEGS[sign.toLowerCase()], ASC)
-    const p1 = polar(sv, R_ZIN, cx, cy), p2 = polar(sv, R_HOU_I, cx, cy)
+    const p1 = polar(sv, R_ZIN,   cx, cy)
+    const p2 = polar(sv, R_HOU_I, cx, cy)
     return `<line x1="${p1.x.toFixed(2)}" y1="${p1.y.toFixed(2)}" x2="${p2.x.toFixed(2)}" y2="${p2.y.toFixed(2)}" stroke="${T.dividerColor}" stroke-width="0.7"/>`
   }).join('\n')
 
-  // ─── House ring ───────────────────────────────────────────────────────────
+  // ─── House ring — FIXED midpoint calculation ─────────────────────────────────
   const houseSVG = houseCusps.map((cuspEcl, i) => {
     const nextEcl = houseCusps[(i + 1) % 12]
-    const svgC = e2s(cuspEcl, ASC), svgN = e2s(nextEcl, ASC)
+    const svgC    = e2s(cuspEcl, ASC)
+    const svgN    = e2s(nextEcl, ASC)
+
+    // Ecliptic span of this house going backward (houses run CCW in ecliptic)
     const spanBwd = (((cuspEcl - nextEcl) % 360) + 360) % 360
     const midEcl  = ((cuspEcl - spanBwd / 2) + 360) % 360
     const svgM    = e2s(midEcl, ASC)
-    const d       = arc(svgN, svgC, R_HOU_O, R_HOU_I, cx, cy)
-    const isAng   = i === 0 || i === 3 || i === 6 || i === 9
-    const p1 = polar(svgC, R_HOU_O, cx, cy)
-    const p2 = polar(svgC, R_ASP - 6, cx, cy)
-    const mp = polar(svgM, (R_HOU_O + R_HOU_I) / 2, cx, cy)
+
+    const d     = arc(svgN, svgC, R_HOU_O, R_HOU_I, cx, cy)
+    const isAng = i === 0 || i === 3 || i === 6 || i === 9
+    const p1    = polar(svgC, R_HOU_O, cx, cy)
+    const p2    = polar(svgC, R_ASP - 6, cx, cy)
+    const mp    = polar(svgM, (R_HOU_O + R_HOU_I) / 2, cx, cy)
+
     const numTag = showHouseNums
       ? `<text x="${mp.x.toFixed(2)}" y="${mp.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${T.houseNumColor}" font-size="10" font-family="sans-serif" font-weight="600">${i + 1}</text>`
       : ''
+
     return `<path d="${d}" fill="${i % 2 === 0 ? T.houseEven : T.houseOdd}" stroke="${T.tickColor}0.06)" stroke-width="0.4"/>
 <line x1="${p1.x.toFixed(2)}" y1="${p1.y.toFixed(2)}" x2="${p2.x.toFixed(2)}" y2="${p2.y.toFixed(2)}" stroke="${T.tickColor}${isAng ? 0.8 : 0.25})" stroke-width="${isAng ? 2 : 0.8}"/>
 ${numTag}`
   }).join('\n')
 
-  // ─── Axis lines AC/DC/MC/IC ───────────────────────────────────────────────
+  // ─── Axis lines ─────────────────────────────────────────────────────────────
   const axesSVG = [
     { ecl: ASC,               label: 'AC' },
     { ecl: (ASC + 180) % 360, label: 'DC' },
@@ -907,21 +720,25 @@ ${numTag}`
     { ecl: (MC  + 180) % 360, label: 'IC' },
   ].map(({ ecl, label }) => {
     const sv = e2s(ecl, ASC)
-    const p1 = polar(sv, R_HOU_O, cx, cy), p2 = polar(sv, 8, cx, cy)
+    const p1 = polar(sv, R_HOU_O,     cx, cy)
+    const p2 = polar(sv, 8,           cx, cy)
     const lp = polar(sv, R_HOU_I - 14, cx, cy)
     return `<line x1="${p1.x.toFixed(2)}" y1="${p1.y.toFixed(2)}" x2="${p2.x.toFixed(2)}" y2="${p2.y.toFixed(2)}" stroke="${T.axisLineColor}" stroke-width="${SV.axisWeight}"/>
 <text x="${lp.x.toFixed(2)}" y="${lp.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${T.axisLabelColor}" font-size="9" font-weight="700" font-family="sans-serif">${label}</text>`
   }).join('\n')
 
-  // ─── Planet separation ────────────────────────────────────────────────────
+  // ─── Planet separation ───────────────────────────────────────────────────────
   const innerPlanets = placements.filter(p => p.name !== 'Ascendant' && p.name !== 'Midheaven' && !p.isOuter)
   const outerPlanets = placements.filter(p => p.isOuter)
 
-  const innerWithSVG = innerPlanets.map(p => ({ ...p, svgAngle: e2s(p.absolute, ASC) }))
+  const innerWithSVG = innerPlanets
+    .map(p => ({ ...p, svgAngle: e2s(p.absolute, ASC) }))
     .sort((a, b) => a.svgAngle - b.svgAngle)
-  const MIN_SEP = 16
-  const disp = innerWithSVG.map(p => p.svgAngle)
-  for (let pass = 0; pass < 14; pass++) {
+
+  // Angular separation pass
+  const MIN_SEP  = 16
+  const disp     = innerWithSVG.map(p => p.svgAngle)
+  for (let pass = 0; pass < 18; pass++) {
     for (let i = 0; i < disp.length; i++) {
       const j    = (i + 1) % disp.length
       const diff = (((disp[j] - disp[i]) % 360) + 360) % 360
@@ -933,12 +750,28 @@ ${numTag}`
     }
   }
 
-  // ─── Aspect lines ─────────────────────────────────────────────────────────
+  // Radial stacking for planets at same degree
+  const radialOff = new Array(innerWithSVG.length).fill(0)
+  const angleGroups = {}
+  innerWithSVG.forEach((p, i) => {
+    const key = Math.round(p.absolute * 2)
+    if (!angleGroups[key]) angleGroups[key] = []
+    angleGroups[key].push(i)
+  })
+  for (const group of Object.values(angleGroups)) {
+    if (group.length > 1) {
+      group.forEach((idx, layerIdx) => {
+        radialOff[idx] = layerIdx * (PLANET_R * 2 + 4)
+      })
+    }
+  }
+
+  // ─── Aspect lines ────────────────────────────────────────────────────────────
   const ASPECTS = [
-    { angle: 0,   orb: 8, color: T.aspectConj,  width: 1.5, dash: ''    },
-    { angle: 60,  orb: 6, color: T.aspectSext,  width: 1,   dash: ''    },
-    { angle: 90,  orb: 6, color: T.aspectSq,    width: 1.2, dash: ''    },
-    { angle: 120, orb: 8, color: T.aspectTrine, width: 1,   dash: ''    },
+    { angle: 0,   orb: 8, color: T.aspectConj,  width: 1.5, dash: '' },
+    { angle: 60,  orb: 6, color: T.aspectSext,  width: 1,   dash: '' },
+    { angle: 90,  orb: 6, color: T.aspectSq,    width: 1.2, dash: '' },
+    { angle: 120, orb: 8, color: T.aspectTrine, width: 1,   dash: '' },
     { angle: 180, orb: 8, color: T.aspectOpp,   width: 1.5, dash: '4,3' },
   ]
   const aspectBodies = innerWithSVG.filter(p =>
@@ -961,41 +794,54 @@ ${numTag}`
     }
   }
 
-  // ─── Inner planet markers ─────────────────────────────────────────────────
+  // ─── Inner planet markers ────────────────────────────────────────────────────
+  // Planet circles use fill-opacity so background shows through (transparent effect)
+  const backdropOpacity = T.isDark ? '0.78' : '0.85'
+
   const innerSVG = innerWithSVG.map((p, idx) => {
-    const da         = disp[idx]
-    const displaced  = Math.abs(da - p.svgAngle) > 2
+    const da        = disp[idx]
+    const rOff      = radialOff[idx]
+    const displaced = Math.abs(da - p.svgAngle) > 2
+
     const tp1 = polar(p.svgAngle, R_HOU_I - 1, cx, cy)
     const tp2 = polar(p.svgAngle, R_HOU_I - 8, cx, cy)
+
     let leader = ''
     if (displaced) {
-      const lp1 = polar(p.svgAngle, R_HOU_I - 9, cx, cy)
-      const lp2 = polar(da, R_PLN + 15, cx, cy)
+      const lp1 = polar(p.svgAngle, R_HOU_I - 9,      cx, cy)
+      const lp2 = polar(da,         R_PLN - rOff + 15, cx, cy)
       leader = `<line x1="${lp1.x.toFixed(2)}" y1="${lp1.y.toFixed(2)}" x2="${lp2.x.toFixed(2)}" y2="${lp2.y.toFixed(2)}" stroke="${T.tickColor}0.2)" stroke-width="0.7"/>`
     }
-    const pos       = polar(da, R_PLN, cx, cy)
+
+    const pos       = polar(da, R_PLN - rOff, cx, cy)
     const retroMark = p.isRetrograde
       ? `<text x="${(pos.x + 10).toFixed(2)}" y="${(pos.y - 10).toFixed(2)}" fill="${T.planetText}" font-size="7" opacity="0.75">℞</text>`
       : ''
-    const el   = SIGN_ELEMENTS[p.sign] || ''
-    const mod  = SIGN_MODALITIES[p.sign] || ''
+
+    const el    = SIGN_ELEMENTS[p.sign]   || ''
+    const mod   = SIGN_MODALITIES[p.sign] || ''
     const hInfo = p.houseNum ? ` · House ${p.houseNum}` : ''
-    const info = `${p.name}|${p.signGlyph} ${p.sign} ${p.label}${p.isRetrograde ? ' ℞' : ''}|${el} · ${mod}${hInfo}`
+    const info  = `${p.name}|${p.signGlyph} ${p.sign} ${p.label}${p.isRetrograde ? ' ℞' : ''}|${el} · ${mod}${hInfo}`
+
     return `<line x1="${tp1.x.toFixed(2)}" y1="${tp1.y.toFixed(2)}" x2="${tp2.x.toFixed(2)}" y2="${tp2.y.toFixed(2)}" stroke="${T.planetStroke}" stroke-width="1"/>
 ${leader}
 <g class="planet-group" data-info="${info}" style="cursor:pointer">
-  <circle cx="${pos.x.toFixed(2)}" cy="${pos.y.toFixed(2)}" r="13" fill="${T.planetFill}" stroke="${T.planetStroke}" stroke-width="1.2" class="planet-circle"/>
+  <circle cx="${pos.x.toFixed(2)}" cy="${pos.y.toFixed(2)}" r="${PLANET_R}" fill="${T.planetFill}" fill-opacity="${backdropOpacity}" stroke="${T.planetStroke}" stroke-width="1.2" class="planet-circle"/>
   <text x="${pos.x.toFixed(2)}" y="${pos.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${T.planetText}" font-size="12" font-family="serif" pointer-events="none">${p.glyph}</text>
   ${retroMark}
 </g>`
   }).join('\n')
 
-  // ─── Outer planet markers ─────────────────────────────────────────────────
-  const outerWithSVG = outerPlanets.map(p => ({ ...p, svgAngle: e2s(p.absolute, ASC) }))
+  // ─── Outer planet markers ────────────────────────────────────────────────────
+  const outerWithSVG = outerPlanets
+    .map(p => ({ ...p, svgAngle: e2s(p.absolute, ASC) }))
     .sort((a, b) => a.svgAngle - b.svgAngle)
-  const outerDisp   = outerWithSVG.map(p => p.svgAngle)
-  const MIN_SEP_O   = 22
-  for (let pass = 0; pass < 14; pass++) {
+
+  const outerDisp      = outerWithSVG.map(p => p.svgAngle)
+  const outerRadialOff = new Array(outerWithSVG.length).fill(0)
+  const MIN_SEP_O      = 22
+
+  for (let pass = 0; pass < 18; pass++) {
     for (let i = 0; i < outerDisp.length; i++) {
       const j    = (i + 1) % outerDisp.length
       const diff = (((outerDisp[j] - outerDisp[i]) % 360) + 360) % 360
@@ -1007,28 +853,47 @@ ${leader}
     }
   }
 
+  // Radial stacking for outer planets at same degree
+  const outerAngleGroups = {}
+  outerWithSVG.forEach((p, i) => {
+    const key = Math.round(p.absolute * 2)
+    if (!outerAngleGroups[key]) outerAngleGroups[key] = []
+    outerAngleGroups[key].push(i)
+  })
+  for (const group of Object.values(outerAngleGroups)) {
+    if (group.length > 1) {
+      group.forEach((idx, layerIdx) => {
+        outerRadialOff[idx] = layerIdx * 26
+      })
+    }
+  }
+
   const outerSVG = outerWithSVG.map((p, idx) => {
     const da       = outerDisp[idx]
-    const tp1      = polar(p.svgAngle, R_OUT + 2,  cx, cy)
-    const tp2      = polar(p.svgAngle, R_OUT + 8,  cx, cy)
-    const lp1      = polar(p.svgAngle, R_OUT + 9,  cx, cy)
-    const lp2      = polar(da,         R_OUT + 22, cx, cy)
-    const labelPos = polar(da,         R_OUT + 34, cx, cy)
-    const el   = SIGN_ELEMENTS[p.sign]  || ''
-    const mod  = SIGN_MODALITIES[p.sign] || ''
+    const rOff     = outerRadialOff[idx]
+    const outerR   = R_OUT + 34 + rOff
+    const tp1      = polar(p.svgAngle, R_OUT + 2,       cx, cy)
+    const tp2      = polar(p.svgAngle, R_OUT + 8,       cx, cy)
+    const lp1      = polar(p.svgAngle, R_OUT + 9,       cx, cy)
+    const lp2      = polar(da,         R_OUT + 22 + rOff, cx, cy)
+    const labelPos = polar(da,         outerR,          cx, cy)
+
+    const el    = SIGN_ELEMENTS[p.sign]   || ''
+    const mod   = SIGN_MODALITIES[p.sign] || ''
     const hInfo = p.houseNum ? ` · House ${p.houseNum}` : ''
-    const info = `${p.name}|${p.signGlyph} ${p.sign} ${p.label}${p.isRetrograde ? ' ℞' : ''}|${el} · ${mod}${hInfo}`
+    const info  = `${p.name}|${p.signGlyph} ${p.sign} ${p.label}${p.isRetrograde ? ' ℞' : ''}|${el} · ${mod}${hInfo}`
+
     return `<line x1="${tp1.x.toFixed(2)}" y1="${tp1.y.toFixed(2)}" x2="${tp2.x.toFixed(2)}" y2="${tp2.y.toFixed(2)}" stroke="${T.outerPlanetLine}" stroke-width="1"/>
 <line x1="${lp1.x.toFixed(2)}" y1="${lp1.y.toFixed(2)}" x2="${lp2.x.toFixed(2)}" y2="${lp2.y.toFixed(2)}" stroke="${T.outerPlanetLine}" stroke-width="0.7"/>
 <g class="planet-group" data-info="${info}" style="cursor:pointer">
-  <circle cx="${labelPos.x.toFixed(2)}" cy="${labelPos.y.toFixed(2)}" r="11" fill="${T.planetFill}" stroke="${T.outerPlanetLine}" stroke-width="1" class="planet-circle"/>
+  <circle cx="${labelPos.x.toFixed(2)}" cy="${labelPos.y.toFixed(2)}" r="11" fill="${T.planetFill}" fill-opacity="${backdropOpacity}" stroke="${T.outerPlanetLine}" stroke-width="1" class="planet-circle"/>
   <text x="${labelPos.x.toFixed(2)}" y="${labelPos.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${T.outerPlanetText}" font-size="10" font-family="serif" pointer-events="none">${p.glyph}</text>
 </g>`
   }).join('\n')
 
-  // ─── Legend ───────────────────────────────────────────────────────────────
+  // ─── Legend ──────────────────────────────────────────────────────────────────
   const legendHTML = placements.map(p => {
-    const isAM  = p.name === 'Ascendant' || p.name === 'Midheaven'
+    const isAM   = p.name === 'Ascendant' || p.name === 'Midheaven'
     const prefix = p.name === 'Ascendant' ? 'AC' : p.name === 'Midheaven' ? 'MC' : ''
     return `<div class="bc-row${isAM ? ' bc-row-axis' : ''}">
   <span class="bc-glyph">${prefix || p.glyph}</span>
@@ -1038,12 +903,13 @@ ${leader}
 </div>`
   }).join('')
 
-  const titleMatch  = prompt.match(/^([A-Z][a-zA-Z\s'\-]+?)(?:\s*[-–—:]|\s+birth|\s+natal|\s+chart|\s+astrological)/i)
-  const chartTitle  = titleMatch ? titleMatch[1].trim() : 'Natal Chart'
-  const bdMatch     = prompt.match(/birth\s*details?\s*[:\-]?\s*([^\n]+)/i)
+  const titleMatch   = prompt.match(/^([A-Z][a-zA-Z\s'\-]+?)(?:\s*[-–—:]|\s+birth|\s+natal|\s+chart|\s+astrological)/i)
+  const chartTitle   = titleMatch ? titleMatch[1].trim() : 'Natal Chart'
+  const bdMatch      = prompt.match(/birth\s*details?\s*[:\-]?\s*([^\n]+)/i)
   const birthDetails = bdMatch ? bdMatch[1].trim() : ''
 
-  const VSIZE = SIZE + 90, OFFSET = 45
+  const VSIZE  = SIZE + 90
+  const OFFSET = 45
 
   return `<style>
   .bc-wrap{width:100%;display:flex;justify-content:center;padding:20px 12px;box-sizing:border-box;background:${T.bg};min-height:100vh;}
@@ -1051,23 +917,23 @@ ${leader}
   .bc-header{margin-bottom:16px;}
   .bc-title{font-size:20px;font-weight:600;color:${T.titleColor};margin:0 0 3px;font-family:Georgia,serif;letter-spacing:0.03em;line-height:1.3;word-break:break-word;overflow-wrap:break-word;}
   .bc-sub{font-size:11px;color:${T.subColor};margin:0;line-height:1.5;word-break:break-word;overflow-wrap:break-word;}
-  .bc-layout{display:grid;grid-template-columns:minmax(0,${VSIZE+10}px) minmax(200px,1fr);gap:20px;align-items:start;}
+  .bc-layout{display:grid;grid-template-columns:minmax(0,${VSIZE + 10}px) minmax(200px,1fr);gap:20px;align-items:start;}
   .bc-svg-box{background:radial-gradient(ellipse at 50% 50%,${T.svgBgInner} 0%,${T.svgBgOuter} 80%);border-radius:14px;display:flex;justify-content:center;align-items:center;padding:6px;box-sizing:border-box;position:relative;}
   .bc-legend{background:${T.legendBg};border:1px solid ${T.legendBorder};border-radius:12px;padding:12px 10px;box-sizing:border-box;max-height:680px;overflow-y:auto;}
   .bc-legend-title{font-size:10px;font-weight:700;color:${T.legendTitleColor};margin:0 0 8px;text-transform:uppercase;letter-spacing:0.08em;line-height:1.5;}
-  .bc-row{display:grid;grid-template-columns:22px 1fr 16px auto;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid ${T.isDark?'rgba(255,255,255,0.05)':'rgba(0,0,0,0.05)'};line-height:1.4;}
-  .bc-row-axis{background:${T.isDark?'rgba(255,255,255,0.03)':'rgba(0,0,0,0.03)'};}
-  .bc-glyph{font-size:12px;color:${T.isDark?'#e2e8f0':'#1a1a2e'};text-align:center;font-family:serif;font-weight:600;}
+  .bc-row{display:grid;grid-template-columns:22px 1fr 16px auto;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid ${T.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'};line-height:1.4;}
+  .bc-row-axis{background:${T.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'};}
+  .bc-glyph{font-size:12px;color:${T.isDark ? '#e2e8f0' : '#1a1a2e'};text-align:center;font-family:serif;font-weight:600;}
   .bc-name{font-size:10px;color:${T.legendNameColor};word-break:break-word;overflow-wrap:break-word;}
   .bc-retro{font-size:9px;opacity:0.65;}
-  .bc-sign{font-size:11px;color:${T.isDark?'#94a3b8':'#555'};text-align:center;font-family:serif;}
+  .bc-sign{font-size:11px;color:${T.isDark ? '#94a3b8' : '#555'};text-align:center;font-family:serif;}
   .bc-pos{font-size:9px;color:${T.legendPosColor};white-space:nowrap;text-align:right;}
-  .bc-aspect-key{margin-top:10px;padding-top:8px;border-top:1px solid ${T.isDark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)'};}
+  .bc-aspect-key{margin-top:10px;padding-top:8px;border-top:1px solid ${T.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'};}
   .bc-aspect-title{font-size:9px;font-weight:700;color:${T.legendTitleColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;line-height:1.5;}
   .bc-asp-row{display:flex;align-items:center;gap:5px;padding:2px 0;}
   .bc-asp-line{width:16px;height:2px;flex-shrink:0;border-radius:1px;}
-  .bc-asp-label{font-size:9px;color:${T.isDark?'rgba(255,255,255,0.45)':'rgba(0,0,0,0.45)'};}
-  .planet-group:hover .planet-circle{stroke-width:2.5!important;filter:brightness(1.35);}
+  .bc-asp-label{font-size:9px;color:${T.isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)'};}
+  .planet-group:hover .planet-circle{stroke-width:2.5!important;filter:brightness(1.4);}
   .bc-tooltip{position:absolute;background:${T.tooltipBg};border:1px solid ${T.tooltipBorder};border-radius:10px;padding:9px 12px;pointer-events:none;opacity:0;transition:opacity 0.12s;z-index:100;min-width:148px;max-width:210px;box-shadow:0 4px 24px rgba(0,0,0,0.5);}
   .bc-tooltip.vis{opacity:1;}
   .bc-tt-name{font-size:12px;font-weight:700;color:${T.tooltipText};margin-bottom:3px;font-family:Georgia,serif;line-height:1.4;}
@@ -1125,44 +991,43 @@ ${leader}
 </div>
 <script>
 (function(){
-  const tip=document.getElementById('bcTip');
-  const tName=document.getElementById('bcTipName');
-  const tPos=document.getElementById('bcTipPos');
-  const tSub=document.getElementById('bcTipSub');
-  const cont=document.getElementById('bcCont');
-  if(!tip||!cont) return;
-  function show(e,info){
-    const parts=info.split('|');
-    tName.textContent=parts[0]||'';
-    tPos.textContent=parts[1]||'';
-    tSub.textContent=parts[2]||'';
+  const tip   = document.getElementById('bcTip');
+  const tName = document.getElementById('bcTipName');
+  const tPos  = document.getElementById('bcTipPos');
+  const tSub  = document.getElementById('bcTipSub');
+  const cont  = document.getElementById('bcCont');
+  if (!tip || !cont) return;
+  function show(e, info) {
+    const parts = info.split('|');
+    tName.textContent = parts[0] || '';
+    tPos.textContent  = parts[1] || '';
+    tSub.textContent  = parts[2] || '';
     tip.classList.add('vis');
     move(e);
   }
-  function move(e){
-    const r=cont.getBoundingClientRect();
-    let x=e.clientX-r.left+14, y=e.clientY-r.top-10;
-    const tw=tip.offsetWidth||160, th=tip.offsetHeight||72;
-    if(x+tw>r.width-6) x=e.clientX-r.left-tw-14;
-    if(y+th>r.height-6) y=e.clientY-r.top-th-10;
-    tip.style.left=Math.max(4,x)+'px';
-    tip.style.top=Math.max(4,y)+'px';
+    function move(e) {
+    const r  = cont.getBoundingClientRect();
+    let x    = e.clientX - r.left + 14;
+    let y    = e.clientY - r.top - 10;
+    const tw = tip.offsetWidth  || 160;
+    const th = tip.offsetHeight || 72;
+    if (x + tw > r.width  - 6) x = e.clientX - r.left - tw - 14;
+    if (y + th > r.height - 6) y = e.clientY - r.top  - th - 10;
+    tip.style.left = Math.max(4, x) + 'px';
+    tip.style.top  = Math.max(4, y) + 'px';
   }
-  function hide(){ tip.classList.remove('vis'); }
-  document.querySelectorAll('.planet-group').forEach(function(g){
-    const info=g.getAttribute('data-info');
-    g.addEventListener('mouseenter',function(e){ show(e,info); });
-    g.addEventListener('mousemove', function(e){ move(e); });
-    g.addEventListener('mouseleave',hide);
-    g.addEventListener('click',function(e){
-      e.stopPropagation();
-      if(tip.classList.contains('vis')&&tName.textContent===info.split('|')[0]){ hide(); }
-      else{ show(e,info); }
+  function hide() { tip.classList.remove('vis'); }
+  document.querySelectorAll('.planet-group').forEach(function(g) {
+    g.addEventListener('mouseenter', function(e) { show(e, g.dataset.info); });
+    g.addEventListener('mousemove',  function(e) { move(e); });
+    g.addEventListener('mouseleave', hide);
+    g.addEventListener('click', function(e) {
+      show(e, g.dataset.info);
+      setTimeout(hide, 3200);
     });
   });
-  document.addEventListener('click',hide);
 })();
-</script>`
+<\/script>`
 }
 
 // ─── Style System ─────────────────────────────────────────────────────────────
