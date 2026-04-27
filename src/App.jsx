@@ -590,7 +590,27 @@ function buildBirthChartHTML(prompt) {
   const placements  = extractBirthChartData(prompt)
   const T           = pickChartTheme(prompt)
   const houseCusps  = extractHouseCusps(placements)
-  const signMode    = parseSignDisplayMode(prompt)
+
+  // ─── Sign display mode ────────────────────────────────────────────────────
+  const lowerP = prompt.toLowerCase()
+  let signMode = 'glyph'
+  if (
+    lowerP.includes('sign name and icon') || lowerP.includes('icon and name') ||
+    lowerP.includes('both sign') || lowerP.includes('glyph and name') ||
+    lowerP.includes('name and glyph') || lowerP.includes('symbol and name') ||
+    lowerP.includes('name and symbol') || lowerP.includes('show both')
+  ) {
+    signMode = 'both'
+  } else if (
+    lowerP.includes('sign name') || lowerP.includes('text sign') ||
+    lowerP.includes('written sign') || lowerP.includes('spelled out') ||
+    lowerP.includes('name only') || lowerP.includes('just the name')
+  ) {
+    signMode = 'name'
+  } else {
+    const modes = ['glyph', 'glyph', 'name', 'both']
+    signMode = modes[Math.floor(Math.random() * modes.length)]
+  }
 
   const ascP = placements.find(p => p.name === 'Ascendant')
   const mcP  = placements.find(p => p.name === 'Midheaven')
@@ -600,18 +620,15 @@ function buildBirthChartHTML(prompt) {
   const SIZE = 580
   const cx   = SIZE / 2
   const cy   = SIZE / 2
-  const lower = prompt.toLowerCase()
 
-  // House number visibility
   const showHouseNums =
-    lower.includes('house number') ||
-    lower.includes('house numbers') ||
-    lower.includes('numbered house') ||
-    lower.includes('show house') ||
-    lower.includes('display house') ||
+    lowerP.includes('house number') ||
+    lowerP.includes('house numbers') ||
+    lowerP.includes('numbered house') ||
+    lowerP.includes('show house') ||
+    lowerP.includes('display house') ||
     Math.random() > 0.4
 
-  // Style variants
   const STYLE_VARIANTS = [
     { zodiacRingWidth:40, houseRingWidth:49, planetRingR:133, aspectRingR:104, zodiacFontSize:16, showDegreeMarks:true,  spokeOpacity:0.7,  axisWeight:1.8 },
     { zodiacRingWidth:36, houseRingWidth:44, planetRingR:130, aspectRingR:100, zodiacFontSize:14, showDegreeMarks:true,  spokeOpacity:0.45, axisWeight:2.4 },
@@ -628,44 +645,73 @@ function buildBirthChartHTML(prompt) {
   const R_ASP   = Math.min(SV.aspectRingR, R_PLN - 22)
   const PLANET_R = 13
 
-  // ─── Sign label renderer ────────────────────────────────────────────────────
-  function renderSignLabel(sign, midR, svgMidAngle) {
-    const mp       = polar(svgMidAngle, midR, cx, cy)
-    const color    = T.signTextColor
-    const fontSize = SV.zodiacFontSize
-
-    if (signMode === 'name') {
-      const nameSize = Math.max(7, fontSize - 5)
-      return `<text x="${mp.x.toFixed(2)}" y="${mp.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${color}" font-size="${nameSize}" font-family="sans-serif" font-weight="500">${sign}</text>`
+   // ─── Text rotation helper ─────────────────────────────────────────────────
+  // In our SVG polar system: angle 0 = top, increases clockwise.
+  // polar(a, r) places a point at CSS-angle a from top.
+  // The tangent direction at that point (running along the arc) = a degrees.
+  // BUT: text rendered at rotation=a reads clockwise-outward on the right half
+  // and would be upside-down on the left half.
+  // Fix for left half: add 180° so text always reads left-to-right.
+  function textRotation(svgAngle) {
+    const a = ((svgAngle % 360) + 360) % 360
+    // right half and top/bottom: 315–360 and 0–135 reads correctly with just `a`
+    // left half: 135–315 needs 180° flip
+    if (a > 135 && a < 315) {
+      return a + 180  // flip so text doesn't read upside-down
     }
-    if (signMode === 'both') {
-      const glyphPos = polar(svgMidAngle, midR + 7, cx, cy)
-      const namePos  = polar(svgMidAngle, midR - 7, cx, cy)
-      const nameSize = Math.max(6, fontSize - 6)
-      return `<text x="${glyphPos.x.toFixed(2)}" y="${glyphPos.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${color}" font-size="${Math.max(10, fontSize - 2)}" font-family="serif">${SIGN_GLYPHS[sign]}</text>
-<text x="${namePos.x.toFixed(2)}" y="${namePos.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${color}" font-size="${nameSize}" font-family="sans-serif" font-weight="500" opacity="0.85">${sign}</text>`
-    }
-    // default: glyph only
-    return `<text x="${mp.x.toFixed(2)}" y="${mp.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${color}" font-size="${fontSize}" font-family="serif">${SIGN_GLYPHS[sign]}</text>`
+    return a
   }
 
-  // ─── Zodiac ring ────────────────────────────────────────────────────────────
+   // ─── Sign label renderer ──────────────────────────────────────────────────
+  function renderSignLabel(sign, midR, svgMidAngle) {
+    const mp    = polar(svgMidAngle, midR, cx, cy)
+    const color = T.signTextColor
+    const fs    = SV.zodiacFontSize
+    const rot   = textRotation(svgMidAngle)
+    const tx    = mp.x.toFixed(2)
+    const ty    = mp.y.toFixed(2)
+
+    if (signMode === 'name') {
+      const nameSize = Math.max(7, fs - 4)
+      return `<text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="middle" fill="${color}" font-size="${nameSize}" font-family="sans-serif" font-weight="600" transform="rotate(${rot.toFixed(1)},${tx},${ty})">${sign}</text>`
+    }
+
+    if (signMode === 'both') {
+      // Glyph slightly toward outer edge, name slightly toward inner edge
+      const offset  = Math.round(fs * 0.42)
+      const gpR     = midR + offset
+      const npR     = midR - offset
+      const gp      = polar(svgMidAngle, gpR, cx, cy)
+      const np      = polar(svgMidAngle, npR, cx, cy)
+      const gtx     = gp.x.toFixed(2), gty = gp.y.toFixed(2)
+      const ntx     = np.x.toFixed(2), nty = np.y.toFixed(2)
+      const nameSize  = Math.max(6, fs - 6)
+      const glyphSize = Math.max(10, fs - 1)
+      return `<text x="${gtx}" y="${gty}" text-anchor="middle" dominant-baseline="middle" fill="${color}" font-size="${glyphSize}" font-family="serif" transform="rotate(${rot.toFixed(1)},${gtx},${gty})">${SIGN_GLYPHS[sign]}</text>
+<text x="${ntx}" y="${nty}" text-anchor="middle" dominant-baseline="middle" fill="${color}" font-size="${nameSize}" font-family="sans-serif" font-weight="600" opacity="0.9" transform="rotate(${rot.toFixed(1)},${ntx},${nty})">${sign}</text>`
+    }
+
+    // glyph only — unicode symbols look fine without rotation
+    return `<text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="middle" fill="${color}" font-size="${fs}" font-family="serif">${SIGN_GLYPHS[sign]}</text>`
+  }
+
+  // ─── Zodiac ring ──────────────────────────────────────────────────────────
   const zodSVG = ZODIAC_ORDER.map(sign => {
     const se   = SIGN_BASE_DEGS[sign.toLowerCase()]
     const svgA = e2s(se, ASC)
     const svgB = e2s(se + 30, ASC)
     const svgM = e2s(se + 15, ASC)
     const el   = SIGN_ELEMENTS[sign]
-    const fill   = el === 'Fire' ? T.zodiacFire  : el === 'Earth' ? T.zodiacEarth  : el === 'Air' ? T.zodiacAir  : T.zodiacWater
-    const stroke = el === 'Fire' ? T.zodiacFireS : el === 'Earth' ? T.zodiacEarthS : el === 'Air' ? T.zodiacAirS : T.zodiacWaterS
-    const d      = arc(svgB, svgA, R_OUT, R_ZIN, cx, cy)
-    const midR   = (R_OUT + R_ZIN) / 2
-    const sw     = SV.spokeOpacity > 0.6 ? 1.2 : 0.9
+    const fill   = el==='Fire' ? T.zodiacFire  : el==='Earth' ? T.zodiacEarth  : el==='Air' ? T.zodiacAir  : T.zodiacWater
+    const stroke = el==='Fire' ? T.zodiacFireS : el==='Earth' ? T.zodiacEarthS : el==='Air' ? T.zodiacAirS : T.zodiacWaterS
+    const d    = arc(svgB, svgA, R_OUT, R_ZIN, cx, cy)
+    const midR = (R_OUT + R_ZIN) / 2
+    const sw   = SV.spokeOpacity > 0.6 ? 1.2 : 0.9
     return `<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
 ${renderSignLabel(sign, midR, svgM)}`
   }).join('\n')
 
-  // ─── Degree ticks ───────────────────────────────────────────────────────────
+  // ─── Degree ticks ─────────────────────────────────────────────────────────
   const tickSVG = SV.showDegreeMarks
     ? Array.from({ length: 360 }, (_, i) => {
         const sv  = e2s(i, ASC)
@@ -678,7 +724,7 @@ ${renderSignLabel(sign, midR, svgM)}`
       }).join('\n')
     : ''
 
-  // ─── Sign boundary spokes ───────────────────────────────────────────────────
+  // ─── Sign boundary spokes ─────────────────────────────────────────────────
   const spokeSVG = ZODIAC_ORDER.map(sign => {
     const sv = e2s(SIGN_BASE_DEGS[sign.toLowerCase()], ASC)
     const p1 = polar(sv, R_ZIN,   cx, cy)
@@ -686,25 +732,37 @@ ${renderSignLabel(sign, midR, svgM)}`
     return `<line x1="${p1.x.toFixed(2)}" y1="${p1.y.toFixed(2)}" x2="${p2.x.toFixed(2)}" y2="${p2.y.toFixed(2)}" stroke="${T.dividerColor}" stroke-width="0.7"/>`
   }).join('\n')
 
-  // ─── House ring — FIXED midpoint calculation ─────────────────────────────────
+  // ─── House ring — house number fix ────────────────────────────────────────
+  // The correct midpoint of a house arc in SVG space:
+  // Each house runs from svgC (its own cusp) to svgN (next cusp) going CLOCKWISE
+  // in SVG. The arc() function draws from a1 to a2 clockwise when a2 > a1.
+  // We call arc(svgN, svgC, ...) meaning a1=svgN, a2=svgC (after while loop adds 360).
+  // So the arc goes from svgN clockwise to svgC.
+  // Midpoint = svgN + half of that clockwise span.
   const houseSVG = houseCusps.map((cuspEcl, i) => {
     const nextEcl = houseCusps[(i + 1) % 12]
-    const svgC    = e2s(cuspEcl, ASC)
-    const svgN    = e2s(nextEcl, ASC)
 
-    // Ecliptic span of this house going backward (houses run CCW in ecliptic)
-    const spanBwd = (((cuspEcl - nextEcl) % 360) + 360) % 360
-    const midEcl  = ((cuspEcl - spanBwd / 2) + 360) % 360
-    const svgM    = e2s(midEcl, ASC)
+    const svgC = e2s(cuspEcl, ASC)   // SVG angle of this house cusp
+    const svgN = e2s(nextEcl, ASC)   // SVG angle of next house cusp
+
+    // Clockwise span from svgN to svgC
+    // arc() draws: start=svgN, end=svgC (clockwise), span = (svgC - svgN + 360) % 360
+    const span = (((svgC - svgN) % 360) + 360) % 360
+
+    // Midpoint going clockwise from svgN by half the span
+    const svgM = (svgN + span / 2) % 360
 
     const d     = arc(svgN, svgC, R_HOU_O, R_HOU_I, cx, cy)
     const isAng = i === 0 || i === 3 || i === 6 || i === 9
-    const p1    = polar(svgC, R_HOU_O, cx, cy)
+    const p1    = polar(svgC, R_HOU_O,  cx, cy)
     const p2    = polar(svgC, R_ASP - 6, cx, cy)
-    const mp    = polar(svgM, (R_HOU_O + R_HOU_I) / 2, cx, cy)
+
+    // House number position: midpoint of ring radially
+    const numR  = (R_HOU_O + R_HOU_I) / 2
+    const mp    = polar(svgM, numR, cx, cy)
 
     const numTag = showHouseNums
-      ? `<text x="${mp.x.toFixed(2)}" y="${mp.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${T.houseNumColor}" font-size="10" font-family="sans-serif" font-weight="600">${i + 1}</text>`
+      ? `<text x="${mp.x.toFixed(2)}" y="${mp.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${T.houseNumColor}" font-size="10" font-family="sans-serif" font-weight="700">${i + 1}</text>`
       : ''
 
     return `<path d="${d}" fill="${i % 2 === 0 ? T.houseEven : T.houseOdd}" stroke="${T.tickColor}0.06)" stroke-width="0.4"/>
@@ -712,7 +770,7 @@ ${renderSignLabel(sign, midR, svgM)}`
 ${numTag}`
   }).join('\n')
 
-  // ─── Axis lines ─────────────────────────────────────────────────────────────
+  // ─── Axis lines ───────────────────────────────────────────────────────────
   const axesSVG = [
     { ecl: ASC,               label: 'AC' },
     { ecl: (ASC + 180) % 360, label: 'DC' },
@@ -720,14 +778,14 @@ ${numTag}`
     { ecl: (MC  + 180) % 360, label: 'IC' },
   ].map(({ ecl, label }) => {
     const sv = e2s(ecl, ASC)
-    const p1 = polar(sv, R_HOU_O,     cx, cy)
-    const p2 = polar(sv, 8,           cx, cy)
+    const p1 = polar(sv, R_HOU_O,      cx, cy)
+    const p2 = polar(sv, 8,            cx, cy)
     const lp = polar(sv, R_HOU_I - 14, cx, cy)
     return `<line x1="${p1.x.toFixed(2)}" y1="${p1.y.toFixed(2)}" x2="${p2.x.toFixed(2)}" y2="${p2.y.toFixed(2)}" stroke="${T.axisLineColor}" stroke-width="${SV.axisWeight}"/>
 <text x="${lp.x.toFixed(2)}" y="${lp.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${T.axisLabelColor}" font-size="9" font-weight="700" font-family="sans-serif">${label}</text>`
   }).join('\n')
 
-  // ─── Planet separation ───────────────────────────────────────────────────────
+  // ─── Planet separation ────────────────────────────────────────────────────
   const innerPlanets = placements.filter(p => p.name !== 'Ascendant' && p.name !== 'Midheaven' && !p.isOuter)
   const outerPlanets = placements.filter(p => p.isOuter)
 
@@ -735,9 +793,8 @@ ${numTag}`
     .map(p => ({ ...p, svgAngle: e2s(p.absolute, ASC) }))
     .sort((a, b) => a.svgAngle - b.svgAngle)
 
-  // Angular separation pass
-  const MIN_SEP  = 16
-  const disp     = innerWithSVG.map(p => p.svgAngle)
+  const MIN_SEP = 16
+  const disp    = innerWithSVG.map(p => p.svgAngle)
   for (let pass = 0; pass < 18; pass++) {
     for (let i = 0; i < disp.length; i++) {
       const j    = (i + 1) % disp.length
@@ -750,8 +807,7 @@ ${numTag}`
     }
   }
 
-  // Radial stacking for planets at same degree
-  const radialOff = new Array(innerWithSVG.length).fill(0)
+  const radialOff   = new Array(innerWithSVG.length).fill(0)
   const angleGroups = {}
   innerWithSVG.forEach((p, i) => {
     const key = Math.round(p.absolute * 2)
@@ -766,7 +822,7 @@ ${numTag}`
     }
   }
 
-  // ─── Aspect lines ────────────────────────────────────────────────────────────
+  // ─── Aspects ──────────────────────────────────────────────────────────────
   const ASPECTS = [
     { angle: 0,   orb: 8, color: T.aspectConj,  width: 1.5, dash: '' },
     { angle: 60,  orb: 6, color: T.aspectSext,  width: 1,   dash: '' },
@@ -794,35 +850,29 @@ ${numTag}`
     }
   }
 
-  // ─── Inner planet markers ────────────────────────────────────────────────────
-  // Planet circles use fill-opacity so background shows through (transparent effect)
+  // ─── Inner planets ────────────────────────────────────────────────────────
   const backdropOpacity = T.isDark ? '0.78' : '0.85'
 
   const innerSVG = innerWithSVG.map((p, idx) => {
     const da        = disp[idx]
     const rOff      = radialOff[idx]
     const displaced = Math.abs(da - p.svgAngle) > 2
-
     const tp1 = polar(p.svgAngle, R_HOU_I - 1, cx, cy)
     const tp2 = polar(p.svgAngle, R_HOU_I - 8, cx, cy)
-
     let leader = ''
     if (displaced) {
       const lp1 = polar(p.svgAngle, R_HOU_I - 9,      cx, cy)
       const lp2 = polar(da,         R_PLN - rOff + 15, cx, cy)
       leader = `<line x1="${lp1.x.toFixed(2)}" y1="${lp1.y.toFixed(2)}" x2="${lp2.x.toFixed(2)}" y2="${lp2.y.toFixed(2)}" stroke="${T.tickColor}0.2)" stroke-width="0.7"/>`
     }
-
     const pos       = polar(da, R_PLN - rOff, cx, cy)
     const retroMark = p.isRetrograde
-      ? `<text x="${(pos.x + 10).toFixed(2)}" y="${(pos.y - 10).toFixed(2)}" fill="${T.planetText}" font-size="7" opacity="0.75">℞</text>`
+      ? `<text x="${(pos.x+10).toFixed(2)}" y="${(pos.y-10).toFixed(2)}" fill="${T.planetText}" font-size="7" opacity="0.75">℞</text>`
       : ''
-
     const el    = SIGN_ELEMENTS[p.sign]   || ''
     const mod   = SIGN_MODALITIES[p.sign] || ''
     const hInfo = p.houseNum ? ` · House ${p.houseNum}` : ''
     const info  = `${p.name}|${p.signGlyph} ${p.sign} ${p.label}${p.isRetrograde ? ' ℞' : ''}|${el} · ${mod}${hInfo}`
-
     return `<line x1="${tp1.x.toFixed(2)}" y1="${tp1.y.toFixed(2)}" x2="${tp2.x.toFixed(2)}" y2="${tp2.y.toFixed(2)}" stroke="${T.planetStroke}" stroke-width="1"/>
 ${leader}
 <g class="planet-group" data-info="${info}" style="cursor:pointer">
@@ -832,15 +882,13 @@ ${leader}
 </g>`
   }).join('\n')
 
-  // ─── Outer planet markers ────────────────────────────────────────────────────
+  // ─── Outer planets ────────────────────────────────────────────────────────
   const outerWithSVG = outerPlanets
     .map(p => ({ ...p, svgAngle: e2s(p.absolute, ASC) }))
     .sort((a, b) => a.svgAngle - b.svgAngle)
-
   const outerDisp      = outerWithSVG.map(p => p.svgAngle)
   const outerRadialOff = new Array(outerWithSVG.length).fill(0)
   const MIN_SEP_O      = 22
-
   for (let pass = 0; pass < 18; pass++) {
     for (let i = 0; i < outerDisp.length; i++) {
       const j    = (i + 1) % outerDisp.length
@@ -852,8 +900,6 @@ ${leader}
       }
     }
   }
-
-  // Radial stacking for outer planets at same degree
   const outerAngleGroups = {}
   outerWithSVG.forEach((p, i) => {
     const key = Math.round(p.absolute * 2)
@@ -862,9 +908,7 @@ ${leader}
   })
   for (const group of Object.values(outerAngleGroups)) {
     if (group.length > 1) {
-      group.forEach((idx, layerIdx) => {
-        outerRadialOff[idx] = layerIdx * 26
-      })
+      group.forEach((idx, layerIdx) => { outerRadialOff[idx] = layerIdx * 26 })
     }
   }
 
@@ -872,17 +916,15 @@ ${leader}
     const da       = outerDisp[idx]
     const rOff     = outerRadialOff[idx]
     const outerR   = R_OUT + 34 + rOff
-    const tp1      = polar(p.svgAngle, R_OUT + 2,       cx, cy)
-    const tp2      = polar(p.svgAngle, R_OUT + 8,       cx, cy)
-    const lp1      = polar(p.svgAngle, R_OUT + 9,       cx, cy)
-    const lp2      = polar(da,         R_OUT + 22 + rOff, cx, cy)
-    const labelPos = polar(da,         outerR,          cx, cy)
-
+    const tp1      = polar(p.svgAngle, R_OUT + 2,         cx, cy)
+    const tp2      = polar(p.svgAngle, R_OUT + 8,         cx, cy)
+    const lp1      = polar(p.svgAngle, R_OUT + 9,         cx, cy)
+    const lp2      = polar(da,         R_OUT + 22 + rOff,  cx, cy)
+    const labelPos = polar(da,         outerR,             cx, cy)
     const el    = SIGN_ELEMENTS[p.sign]   || ''
     const mod   = SIGN_MODALITIES[p.sign] || ''
     const hInfo = p.houseNum ? ` · House ${p.houseNum}` : ''
     const info  = `${p.name}|${p.signGlyph} ${p.sign} ${p.label}${p.isRetrograde ? ' ℞' : ''}|${el} · ${mod}${hInfo}`
-
     return `<line x1="${tp1.x.toFixed(2)}" y1="${tp1.y.toFixed(2)}" x2="${tp2.x.toFixed(2)}" y2="${tp2.y.toFixed(2)}" stroke="${T.outerPlanetLine}" stroke-width="1"/>
 <line x1="${lp1.x.toFixed(2)}" y1="${lp1.y.toFixed(2)}" x2="${lp2.x.toFixed(2)}" y2="${lp2.y.toFixed(2)}" stroke="${T.outerPlanetLine}" stroke-width="0.7"/>
 <g class="planet-group" data-info="${info}" style="cursor:pointer">
@@ -891,7 +933,7 @@ ${leader}
 </g>`
   }).join('\n')
 
-  // ─── Legend ──────────────────────────────────────────────────────────────────
+  // ─── Legend ───────────────────────────────────────────────────────────────
   const legendHTML = placements.map(p => {
     const isAM   = p.name === 'Ascendant' || p.name === 'Midheaven'
     const prefix = p.name === 'Ascendant' ? 'AC' : p.name === 'Midheaven' ? 'MC' : ''
@@ -917,22 +959,22 @@ ${leader}
   .bc-header{margin-bottom:16px;}
   .bc-title{font-size:20px;font-weight:600;color:${T.titleColor};margin:0 0 3px;font-family:Georgia,serif;letter-spacing:0.03em;line-height:1.3;word-break:break-word;overflow-wrap:break-word;}
   .bc-sub{font-size:11px;color:${T.subColor};margin:0;line-height:1.5;word-break:break-word;overflow-wrap:break-word;}
-  .bc-layout{display:grid;grid-template-columns:minmax(0,${VSIZE + 10}px) minmax(200px,1fr);gap:20px;align-items:start;}
+  .bc-layout{display:grid;grid-template-columns:minmax(0,${VSIZE+10}px) minmax(200px,1fr);gap:20px;align-items:start;}
   .bc-svg-box{background:radial-gradient(ellipse at 50% 50%,${T.svgBgInner} 0%,${T.svgBgOuter} 80%);border-radius:14px;display:flex;justify-content:center;align-items:center;padding:6px;box-sizing:border-box;position:relative;}
   .bc-legend{background:${T.legendBg};border:1px solid ${T.legendBorder};border-radius:12px;padding:12px 10px;box-sizing:border-box;max-height:680px;overflow-y:auto;}
   .bc-legend-title{font-size:10px;font-weight:700;color:${T.legendTitleColor};margin:0 0 8px;text-transform:uppercase;letter-spacing:0.08em;line-height:1.5;}
-  .bc-row{display:grid;grid-template-columns:22px 1fr 16px auto;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid ${T.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'};line-height:1.4;}
-  .bc-row-axis{background:${T.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'};}
-  .bc-glyph{font-size:12px;color:${T.isDark ? '#e2e8f0' : '#1a1a2e'};text-align:center;font-family:serif;font-weight:600;}
+  .bc-row{display:grid;grid-template-columns:22px 1fr 16px auto;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid ${T.isDark?'rgba(255,255,255,0.05)':'rgba(0,0,0,0.05)'};line-height:1.4;}
+  .bc-row-axis{background:${T.isDark?'rgba(255,255,255,0.03)':'rgba(0,0,0,0.03)'};}
+  .bc-glyph{font-size:12px;color:${T.isDark?'#e2e8f0':'#1a1a2e'};text-align:center;font-family:serif;font-weight:600;}
   .bc-name{font-size:10px;color:${T.legendNameColor};word-break:break-word;overflow-wrap:break-word;}
   .bc-retro{font-size:9px;opacity:0.65;}
-  .bc-sign{font-size:11px;color:${T.isDark ? '#94a3b8' : '#555'};text-align:center;font-family:serif;}
+  .bc-sign{font-size:11px;color:${T.isDark?'#94a3b8':'#555'};text-align:center;font-family:serif;}
   .bc-pos{font-size:9px;color:${T.legendPosColor};white-space:nowrap;text-align:right;}
-  .bc-aspect-key{margin-top:10px;padding-top:8px;border-top:1px solid ${T.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'};}
+  .bc-aspect-key{margin-top:10px;padding-top:8px;border-top:1px solid ${T.isDark?'rgba(255,255,255,0.06)':'rgba(0,0,0,0.06)'};}
   .bc-aspect-title{font-size:9px;font-weight:700;color:${T.legendTitleColor};text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;line-height:1.5;}
   .bc-asp-row{display:flex;align-items:center;gap:5px;padding:2px 0;}
   .bc-asp-line{width:16px;height:2px;flex-shrink:0;border-radius:1px;}
-  .bc-asp-label{font-size:9px;color:${T.isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)'};}
+  .bc-asp-label{font-size:9px;color:${T.isDark?'rgba(255,255,255,0.45)':'rgba(0,0,0,0.45)'};}
   .planet-group:hover .planet-circle{stroke-width:2.5!important;filter:brightness(1.4);}
   .bc-tooltip{position:absolute;background:${T.tooltipBg};border:1px solid ${T.tooltipBorder};border-radius:10px;padding:9px 12px;pointer-events:none;opacity:0;transition:opacity 0.12s;z-index:100;min-width:148px;max-width:210px;box-shadow:0 4px 24px rgba(0,0,0,0.5);}
   .bc-tooltip.vis{opacity:1;}
@@ -961,12 +1003,12 @@ ${leader}
             <stop offset="100%" stop-color="${T.svgBgOuter}"/>
           </radialGradient>
         </defs>
-        <circle cx="${cx}" cy="${cy}" r="${R_OUT + 55}" fill="url(#bcBg)"/>
+        <circle cx="${cx}" cy="${cy}" r="${R_OUT+55}" fill="url(#bcBg)"/>
         ${zodSVG}
         ${tickSVG}
         ${spokeSVG}
         ${houseSVG}
-        <circle cx="${cx}" cy="${cy}" r="${R_HOU_I - 1}" fill="${T.innerCircle}" opacity="0.96"/>
+        <circle cx="${cx}" cy="${cy}" r="${R_HOU_I-1}" fill="${T.innerCircle}" opacity="0.96"/>
         ${aspectSVG.join('\n')}
         ${axesSVG}
         ${innerSVG}
@@ -1005,10 +1047,10 @@ ${leader}
     tip.classList.add('vis');
     move(e);
   }
-    function move(e) {
+  function move(e) {
     const r  = cont.getBoundingClientRect();
     let x    = e.clientX - r.left + 14;
-    let y    = e.clientY - r.top - 10;
+    let y    = e.clientY - r.top  - 10;
     const tw = tip.offsetWidth  || 160;
     const th = tip.offsetHeight || 72;
     if (x + tw > r.width  - 6) x = e.clientX - r.left - tw - 14;
