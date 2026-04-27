@@ -920,7 +920,7 @@ const houseNumberSVG = houseCusps.map((cuspEcl, i) => {
       font-family="sans-serif"
       font-weight="700"
       pointer-events="none"
-    >${'H' + (i + 1)}</text>
+     >${i + 1}</text>
   ` : ''
 }).join('\n')
 
