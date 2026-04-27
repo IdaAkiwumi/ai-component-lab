@@ -658,29 +658,37 @@ function extractBirthChartData(prompt) {
 
 function extractHouseCusps(placements) {
   const ascP = placements.find(p => p.name === 'Ascendant')
-  const mcP  = placements.find(p => p.name === 'Midheaven')
-  const asc  = ascP ? ascP.absolute : 0
-  const mc   = mcP  ? mcP.absolute  : (asc + 270) % 360
-  const ic   = (mc + 180) % 360
-  const dsc  = (asc + 180) % 360
-  function bwd(f, t) { return (((f - t) % 360) + 360) % 360 }
-  const s14  = bwd(asc, ic)
-  const s47  = bwd(ic, dsc)
-  const s710 = bwd(dsc, mc)
-  const s101 = bwd(mc, asc)
+  const mcP = placements.find(p => p.name === 'Midheaven')
+
+  const asc = ascP ? ascP.absolute : 0
+  const mc = mcP ? mcP.absolute : (asc + 90) % 360
+  const dsc = (asc + 180) % 360
+  const ic = (mc + 180) % 360
+
+  function forwardSpan(from, to) {
+    return ((to - from) % 360 + 360) % 360
+  }
+
+  // Move FORWARD around the zodiac in house order:
+  // 1 -> 4 -> 7 -> 10 -> 1
+  const span14 = forwardSpan(asc, ic)
+  const span47 = forwardSpan(ic, dsc)
+  const span710 = forwardSpan(dsc, mc)
+  const span101 = forwardSpan(mc, asc + 360)
+
   return [
-    asc,
-    ((asc - s14  * 0.36 + 360) % 360),
-    ((asc - s14  * 0.70 + 360) % 360),
-    ic,
-    ((ic  - s47  * 0.34 + 360) % 360),
-    ((ic  - s47  * 0.68 + 360) % 360),
-    dsc,
-    ((dsc - s710 * 0.36 + 360) % 360),
-    ((dsc - s710 * 0.70 + 360) % 360),
-    mc,
-    ((mc  - s101 * 0.34 + 360) % 360),
-    ((mc  - s101 * 0.68 + 360) % 360),
+    asc % 360,                           // 1
+    (asc + span14 * 0.36) % 360,         // 2
+    (asc + span14 * 0.70) % 360,         // 3
+    ic % 360,                            // 4
+    (ic + span47 * 0.34) % 360,          // 5
+    (ic + span47 * 0.68) % 360,          // 6
+    dsc % 360,                           // 7
+    (dsc + span710 * 0.36) % 360,        // 8
+    (dsc + span710 * 0.70) % 360,        // 9
+    mc % 360,                            // 10
+    (mc + span101 * 0.34) % 360,         // 11
+    (mc + span101 * 0.68) % 360,         // 12
   ]
 }
 
@@ -740,7 +748,7 @@ function buildBirthChartHTML(prompt) {
   const cx   = SIZE / 2
   const cy   = SIZE / 2
 
-  const showHouseNums =
+  const showHouseNums = 
     lowerP.includes('house number') ||
     lowerP.includes('house numbers') ||
     lowerP.includes('numbered house') ||
@@ -857,36 +865,64 @@ ${renderSignLabel(sign, midR, svgM)}`
   // We call arc(svgN, svgC, ...) meaning a1=svgN, a2=svgC (after while loop adds 360).
   // So the arc goes from svgN clockwise to svgC.
   // Midpoint = svgN + half of that clockwise span.
-  const houseSVG = houseCusps.map((cuspEcl, i) => {
-    const nextEcl = houseCusps[(i + 1) % 12]
+ const houseBandSVG = houseCusps.map((cuspEcl, i) => {
+  const nextEcl = houseCusps[(i + 1) % 12]
 
-    const svgC = e2s(cuspEcl, ASC)   // SVG angle of this house cusp
-    const svgN = e2s(nextEcl, ASC)   // SVG angle of next house cusp
+  const svgStart = e2s(cuspEcl, ASC)
+  const svgEnd = e2s(nextEcl, ASC)
 
-    // Clockwise span from svgN to svgC
-    // arc() draws: start=svgN, end=svgC (clockwise), span = (svgC - svgN + 360) % 360
-    const span = (((svgC - svgN) % 360) + 360) % 360
+  const d = arc(svgStart, svgEnd, R_HOU_O, R_HOU_I, cx, cy)
+  const isAng = i === 0 || i === 3 || i === 6 || i === 9
 
-    // Midpoint going clockwise from svgN by half the span
-    const svgM = (svgN + span / 2) % 360
+  const p1 = polar(svgStart, R_HOU_O, cx, cy)
+  const p2 = polar(svgStart, R_ASP - 6, cx, cy)
 
-    const d     = arc(svgN, svgC, R_HOU_O, R_HOU_I, cx, cy)
-    const isAng = i === 0 || i === 3 || i === 6 || i === 9
-    const p1    = polar(svgC, R_HOU_O,  cx, cy)
-    const p2    = polar(svgC, R_ASP - 6, cx, cy)
+  return `
+    <path
+      d="${d}"
+      fill="${i % 2 === 0 ? T.houseEven : T.houseOdd}"
+      stroke="${T.tickColor}0.06)"
+      stroke-width="0.4"
+    />
+    <line
+      x1="${p1.x.toFixed(2)}"
+      y1="${p1.y.toFixed(2)}"
+      x2="${p2.x.toFixed(2)}"
+      y2="${p2.y.toFixed(2)}"
+      stroke="${T.tickColor}${isAng ? 0.8 : 0.25})"
+      stroke-width="${isAng ? 2 : 0.8}"
+    />
+  `
+}).join('\n')
 
-    // House number position: midpoint of ring radially
-    const numR  = (R_HOU_O + R_HOU_I) / 2
-    const mp    = polar(svgM, numR, cx, cy)
 
-    const numTag = showHouseNums
-      ? `<text x="${mp.x.toFixed(2)}" y="${mp.y.toFixed(2)}" text-anchor="middle" dominant-baseline="middle" fill="${T.houseNumColor}" font-size="10" font-family="sans-serif" font-weight="700">${i + 1}</text>`
-      : ''
 
-    return `<path d="${d}" fill="${i % 2 === 0 ? T.houseEven : T.houseOdd}" stroke="${T.tickColor}0.06)" stroke-width="0.4"/>
-<line x1="${p1.x.toFixed(2)}" y1="${p1.y.toFixed(2)}" x2="${p2.x.toFixed(2)}" y2="${p2.y.toFixed(2)}" stroke="${T.tickColor}${isAng ? 0.8 : 0.25})" stroke-width="${isAng ? 2 : 0.8}"/>
-${numTag}`
-  }).join('\n')
+
+const houseNumberSVG = houseCusps.map((cuspEcl, i) => {
+  const nextEcl = houseCusps[(i + 1) % 12]
+
+  let nextForMid = nextEcl
+  while (nextForMid <= cuspEcl) nextForMid += 360
+  const midEcl = (cuspEcl + (nextForMid - cuspEcl) / 2) % 360
+
+  const svgMid = e2s(midEcl, ASC)
+  const numR = R_HOU_I + (R_HOU_O - R_HOU_I) * 0.68
+  const mp = polar(svgMid, numR, cx, cy)
+
+  return showHouseNums ? `
+    <text
+      x="${mp.x.toFixed(2)}"
+      y="${mp.y.toFixed(2)}"
+      text-anchor="middle"
+      dominant-baseline="middle"
+      fill="${T.isDark ? '#cbd5e1' : '#334155'}"
+      font-size="11"
+      font-family="sans-serif"
+      font-weight="700"
+      pointer-events="none"
+    >${'H' + (i + 1)}</text>
+  ` : ''
+}).join('\n')
 
   // ─── Axis lines ───────────────────────────────────────────────────────────
   const axesSVG = [
@@ -1123,14 +1159,15 @@ ${leader}
         </defs>
         <circle cx="${cx}" cy="${cy}" r="${R_OUT+55}" fill="url(#bcBg)"/>
         ${zodSVG}
-        ${tickSVG}
-        ${spokeSVG}
-        ${houseSVG}
-        <circle cx="${cx}" cy="${cy}" r="${R_HOU_I-1}" fill="${T.innerCircle}" opacity="0.96"/>
-        ${aspectSVG.join('\n')}
-        ${axesSVG}
-        ${innerSVG}
-        ${outerSVG}
+${tickSVG}
+${spokeSVG}
+${houseBandSVG}
+<circle cx="${cx}" cy="${cy}" r="${R_HOU_I-1}" fill="${T.innerCircle}" opacity="0.96"/>
+${houseNumberSVG}
+${aspectSVG.join('\n')}
+${axesSVG}
+${innerSVG}
+${outerSVG}
         <circle cx="${cx}" cy="${cy}" r="3.5" fill="${T.centerDot}"/>
       </svg>
     </div>
