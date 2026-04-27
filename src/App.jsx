@@ -219,7 +219,6 @@ function isBirthChartRequest(prompt) {
   return lower.includes('birth chart') || lower.includes('natal chart') || lower.includes('astrological birth') || lower.includes('zodiac wheel') || (lower.includes('rising sign') && lower.includes('house')) || (lower.includes('ascendant') && lower.includes('midheaven'))
 }
 
-// ─── Birth Chart Constants ────────────────────────────────────────────────────
 
 // ─── Birth Chart Constants ────────────────────────────────────────────────────
 
@@ -271,7 +270,8 @@ const CHART_COLOR_PALETTE = {
   pink:     { h:330, s:75, l:48, dark:'#140408', mid:'#cc3377', light:'#ff77bb', text:'#ffd0e8' },
   rose:     { h:350, s:75, l:48, dark:'#140408', mid:'#cc3355', light:'#ff7799', text:'#ffd0d8' },
   // Light themes
-  white:    { h:0,   s:0,  l:100, dark:'#f2f2f2', mid:'#888888', light:'#222222', text:'#111111', isLight:true },
+  // FIX: white uses pure neutral hex values — no hslStr() calls which were introducing cream tint
+  white:    { h:0,   s:0,  l:100, dark:'#ffffff', mid:'#1a1a1a', light:'#000000', text:'#111111', isLight:true, isPureWhite:true },
   cream:    { h:40,  s:35, l:94,  dark:'#f5efe0', mid:'#a08850', light:'#5a4a28', text:'#2e2010', isLight:true },
   silver:   { h:210, s:18, l:72,  dark:'#d8dfe8', mid:'#a0adb8', light:'#6a7a88', text:'#1a2030', isLight:true },
   // Dark/neutral
@@ -287,41 +287,29 @@ const CHART_COLOR_PALETTE = {
 }
 
 const CHART_COLOR_ALIASES = {
-  // Reds
   scarlet:'red', crimson:'red', ruby:'red', maroon:'red',
-  // Oranges
   apricot:'orange',
-  // Golds
   amber:'gold', mustard:'gold', honey:'gold',
-  // Warm neutrals
   copper:'bronze', caramel:'warm',
   terracotta:'coral', salmon:'coral', peach:'coral',
-  // Greens
   emerald:'green', forest:'green',
   jade:'sage', olive:'sage',
   seafoam:'mint',
-  // Blues
   cobalt:'blue', royal:'blue',
   sapphire:'navy', midnight:'navy',
   aquamarine:'cyan', 'ice blue':'cyan',
   turquoise:'teal',
-  // Purples
   amethyst:'purple', plum:'purple',
   mauve:'violet',
   magenta:'pink', fuchsia:'pink',
-  // Pinks
   'rose gold':'rose', burgundy:'rose',
-  // Whites / lights
   ivory:'cream',
   pewter:'silver', ash:'silver',
-  // Greys — each declared exactly once
   grey:'silver', gray:'silver',
   grayscale:'silver', monochrome:'silver',
-  // Darks
   graphite:'charcoal', slate:'charcoal',
   obsidian:'black', onyx:'black', noir:'black',
   chocolate:'bronze',
-  // Specials
   space:'cosmic', galaxy:'cosmic', nebula:'cosmic', stellar:'cosmic',
   neon:'cyan', electric:'cyan',
   glow:'teal',
@@ -382,7 +370,7 @@ function parseChartColors(prompt) {
 }
 
 function buildChartTheme(colorIds) {
-  const FALLBACK_POOL = ['navy','purple','teal','cosmic','warm','green','blue','gold','rose']
+  const FALLBACK_POOL = ['white','navy','purple','teal','cosmic','warm','green','blue','gold','rose']
 
   if (colorIds.length === 0) {
     const pick = FALLBACK_POOL[Math.floor(Math.random() * FALLBACK_POOL.length)]
@@ -394,7 +382,10 @@ function buildChartTheme(colorIds) {
   const C1 = CHART_COLOR_PALETTE[c1id] || CHART_COLOR_PALETTE.navy
   const C2 = c2id ? (CHART_COLOR_PALETTE[c2id] || null) : null
 
-  const isLight = C1.isLight || false
+  const isLight     = C1.isLight || false
+  const isPureWhite = C1.isPureWhite || false
+  const isPureBlack = c1id === 'black'
+
   const H1 = C1.h
   const H2 = C2 ? C2.h : (H1 + 30) % 360
 
@@ -404,60 +395,188 @@ function buildChartTheme(colorIds) {
 
   const bg     = C1.dark
   const cardBg = isLight ? '#ffffff' : (() => {
-    // slightly lighter than bg for card
     const rgb = hexToRgb(C1.dark).split(',').map(Number)
     const bump = rgb.map(v => Math.min(255, v + 12))
     return `rgb(${bump.join(',')})`
   })()
 
-  const zodiacFire  = isLight ? hslStr(H1, 30, 88) : hslStr(H1,         40, 10)
-  const zodiacEarth = isLight ? hslStr(H2, 25, 85) : hslStr(H2,         35,  9)
-  const zodiacAir   = isLight ? hslStr((H1+H2)/2, 20, 90) : hslStr((H1+H2)/2, 30, 8)
-  const zodiacWater = isLight ? hslStr(H2, 20, 87) : hslStr(H2,         25,  7)
+  // ── Zodiac ring fills ──────────────────────────────────────────────────────
+  // For pure white: all sectors are neutral white/light-gray, no hue tint
+  // For pure black: all sectors are neutral very-dark-gray, no hue tint
+  let zodiacFire, zodiacEarth, zodiacAir, zodiacWater
+  let zodiacFireS, zodiacEarthS, zodiacAirS, zodiacWaterS
 
-  const zodiacFireS  = isLight ? hslStr(H1, 60, 45) : hslStr(H1,         65, 50)
-  const zodiacEarthS = isLight ? hslStr(H2, 50, 40) : hslStr(H2,         55, 42)
-  const zodiacAirS   = isLight ? hslStr((H1+H2)/2, 45, 48) : hslStr((H1+H2)/2, 50, 48)
-  const zodiacWaterS = isLight ? hslStr(H2, 40, 42) : hslStr(H2,         45, 38)
+  if (isPureWhite) {
+    zodiacFire  = '#f5f5f5'
+    zodiacEarth = '#ebebeb'
+    zodiacAir   = '#f0f0f0'
+    zodiacWater = '#e8e8e8'
+    zodiacFireS  = '#bbbbbb'
+    zodiacEarthS = '#aaaaaa'
+    zodiacAirS   = '#b5b5b5'
+    zodiacWaterS = '#a8a8a8'
+  } else if (isPureBlack) {
+    zodiacFire  = '#141414'
+    zodiacEarth = '#111111'
+    zodiacAir   = '#131313'
+    zodiacWater = '#0f0f0f'
+    zodiacFireS  = '#555555'
+    zodiacEarthS = '#444444'
+    zodiacAirS   = '#4e4e4e'
+    zodiacWaterS = '#3e3e3e'
+  } else if (isLight) {
+    zodiacFire  = hslStr(H1, 30, 88)
+    zodiacEarth = hslStr(H2, 25, 85)
+    zodiacAir   = hslStr((H1+H2)/2, 20, 90)
+    zodiacWater = hslStr(H2, 20, 87)
+    zodiacFireS  = hslStr(H1, 60, 45)
+    zodiacEarthS = hslStr(H2, 50, 40)
+    zodiacAirS   = hslStr((H1+H2)/2, 45, 48)
+    zodiacWaterS = hslStr(H2, 40, 42)
+  } else {
+    zodiacFire  = hslStr(H1, 40, 10)
+    zodiacEarth = hslStr(H2, 35,  9)
+    zodiacAir   = hslStr((H1+H2)/2, 30, 8)
+    zodiacWater = hslStr(H2, 25,  7)
+    zodiacFireS  = hslStr(H1, 65, 50)
+    zodiacEarthS = hslStr(H2, 55, 42)
+    zodiacAirS   = hslStr((H1+H2)/2, 50, 48)
+    zodiacWaterS = hslStr(H2, 45, 38)
+  }
+
+  // ── House ring fills ───────────────────────────────────────────────────────
+  const houseEven = isPureWhite ? '#f7f7f7'
+                  : isPureBlack ? '#0d0d0d'
+                  : isLight     ? hslStr(H1, 15, 94)
+                  :               hslStr(H1, 30, 7)
+
+  const houseOdd  = isPureWhite ? '#efefef'
+                  : isPureBlack ? '#0a0a0a'
+                  : isLight     ? hslStr(H1, 10, 91)
+                  :               hslStr(H1, 25, 6)
+
+  // ── SVG background ────────────────────────────────────────────────────────
+  const svgBgInner = isPureWhite ? '#ffffff'
+                   : isPureBlack ? '#000000'
+                   : isLight     ? hslStr(H1, 20, 92)
+                   :               hslStr(H1, 40, 8)
+
+  // ── Inner circle ──────────────────────────────────────────────────────────
+  const innerCircle = isPureWhite ? '#ffffff'
+                    : isPureBlack ? '#000000'
+                    : isLight     ? hslStr(H1, 10, 97)
+                    :               C1.dark
 
   return {
     bg,
     cardBg,
     cardBorder:     `rgba(${hexToRgb(accentMid)},0.2)`,
-    svgBgInner:     isLight ? hslStr(H1, 20, 92) : hslStr(H1, 40, 8),
+    svgBgInner,
     svgBgOuter:     bg,
     zodiacFire, zodiacEarth, zodiacAir, zodiacWater,
     zodiacFireS, zodiacEarthS, zodiacAirS, zodiacWaterS,
-    houseEven:      isLight ? hslStr(H1, 15, 94) : hslStr(H1, 30, 7),
-    houseOdd:       isLight ? hslStr(H1, 10, 91) : hslStr(H1, 25, 6),
-    innerCircle:    isLight ? hslStr(H1, 10, 97) : C1.dark,
-    signTextColor:  isLight ? '#111111' : accentText,
-    tickColor:      isLight ? 'rgba(0,0,0,' : `rgba(${hexToRgb(accentMid)},`,
-    dividerColor:   `rgba(${hexToRgb(accentMid)},${isLight ? '0.25' : '0.3'})`,
-    houseNumColor:  isLight ? hslStr(H1, 30, 40) : hslStr(H1, 40, 50),
-    axisLineColor:  isLight ? 'rgba(0,0,0,0.85)' : `rgba(${hexToRgb(accentLight)},0.9)`,
-    axisLabelColor: isLight ? 'rgba(0,0,0,0.6)'  : `rgba(${hexToRgb(accentLight)},0.7)`,
-    planetFill:     isLight ? '#ffffff' : hslStr(H1, 35, 10),
-    planetStroke:   `rgba(${hexToRgb(accentMid)},0.9)`,
-    planetText:     isLight ? '#111111' : accentText,
-    outerPlanetText: isLight ? hslStr(H2, 40, 35) : hslStr(H2, 50, 60),
-    outerPlanetLine: `rgba(${hexToRgb(accentMid)},0.3)`,
-    centerDot:      accentLight,
-    titleColor:     isLight ? '#111111' : accentLight,
-    subColor:       isLight ? 'rgba(0,0,0,0.5)' : `rgba(${hexToRgb(accentLight)},0.5)`,
-    legendBg:       isLight ? '#ffffff' : `rgba(${hexToRgb(accentMid)},0.04)`,
-    legendBorder:   isLight ? 'rgba(0,0,0,0.08)' : `rgba(${hexToRgb(accentMid)},0.15)`,
-    legendTitleColor: isLight ? hslStr(H1, 30, 40) : hslStr(H1, 35, 50),
-    legendNameColor:  isLight ? 'rgba(0,0,0,0.78)' : `rgba(${hexToRgb(accentText)},0.88)`,
-    legendPosColor:   isLight ? hslStr(H1, 20, 50) : hslStr(H1, 25, 45),
-    tooltipBg:      isLight ? '#ffffff' : hslStr(H1, 35, 8),
-    tooltipBorder:  `rgba(${hexToRgb(accentMid)},0.4)`,
-    tooltipText:    isLight ? '#111111' : accentText,
-    aspectConj:     'rgba(255,220,50,0.7)',
-    aspectSext:     C2 ? `rgba(${hexToRgb(C2.light)},0.55)` : `rgba(${hexToRgb(accentLight)},0.5)`,
-    aspectSq:       'rgba(255,80,80,0.55)',
-    aspectTrine:    'rgba(80,220,140,0.5)',
-    aspectOpp:      'rgba(255,80,80,0.62)',
+    houseEven,
+    houseOdd,
+    innerCircle,
+    signTextColor:  isPureWhite ? '#111111'
+                  : isPureBlack ? '#cccccc'
+                  : isLight     ? '#111111'
+                  :               accentText,
+    tickColor:      isPureWhite ? 'rgba(0,0,0,'
+                  : isPureBlack ? 'rgba(255,255,255,'
+                  : isLight     ? 'rgba(0,0,0,'
+                  :               `rgba(${hexToRgb(accentMid)},`,
+    dividerColor:   isPureWhite ? 'rgba(0,0,0,0.2)'
+                  : isPureBlack ? 'rgba(255,255,255,0.15)'
+                  : `rgba(${hexToRgb(accentMid)},${isLight ? '0.25' : '0.3'})`,
+    houseNumColor:  isPureWhite ? '#555555'
+                  : isPureBlack ? '#888888'
+                  : isLight     ? hslStr(H1, 30, 40)
+                  :               hslStr(H1, 40, 50),
+    axisLineColor:  isPureWhite ? 'rgba(0,0,0,0.85)'
+                  : isPureBlack ? 'rgba(255,255,255,0.85)'
+                  : isLight     ? 'rgba(0,0,0,0.85)'
+                  :               `rgba(${hexToRgb(accentLight)},0.9)`,
+    axisLabelColor: isPureWhite ? 'rgba(0,0,0,0.55)'
+                  : isPureBlack ? 'rgba(255,255,255,0.55)'
+                  : isLight     ? 'rgba(0,0,0,0.6)'
+                  :               `rgba(${hexToRgb(accentLight)},0.7)`,
+    planetFill:     isPureWhite ? '#ffffff'
+                  : isPureBlack ? '#000000'
+                  : isLight     ? '#ffffff'
+                  :               hslStr(H1, 35, 10),
+    planetStroke:   isPureWhite ? 'rgba(0,0,0,0.7)'
+                  : isPureBlack ? 'rgba(255,255,255,0.6)'
+                  : `rgba(${hexToRgb(accentMid)},0.9)`,
+    planetText:     isPureWhite ? '#111111'
+                  : isPureBlack ? '#dddddd'
+                  : isLight     ? '#111111'
+                  :               accentText,
+    outerPlanetText: isPureWhite ? '#333333'
+                   : isPureBlack ? '#aaaaaa'
+                   : isLight     ? hslStr(H2, 40, 35)
+                   :               hslStr(H2, 50, 60),
+    outerPlanetLine: isPureWhite ? 'rgba(0,0,0,0.25)'
+                   : isPureBlack ? 'rgba(255,255,255,0.2)'
+                   : `rgba(${hexToRgb(accentMid)},0.3)`,
+    centerDot:      isPureWhite ? '#333333'
+                  : isPureBlack ? '#aaaaaa'
+                  :               accentLight,
+    titleColor:     isPureWhite ? '#111111'
+                  : isPureBlack ? '#eeeeee'
+                  : isLight     ? '#111111'
+                  :               accentLight,
+    subColor:       isPureWhite ? 'rgba(0,0,0,0.5)'
+                  : isPureBlack ? 'rgba(255,255,255,0.45)'
+                  : isLight     ? 'rgba(0,0,0,0.5)'
+                  :               `rgba(${hexToRgb(accentLight)},0.5)`,
+    legendBg:       isPureWhite ? '#ffffff'
+                  : isPureBlack ? '#000000'
+                  : isLight     ? '#ffffff'
+                  :               `rgba(${hexToRgb(accentMid)},0.04)`,
+    legendBorder:   isPureWhite ? 'rgba(0,0,0,0.1)'
+                  : isPureBlack ? 'rgba(255,255,255,0.1)'
+                  : isLight     ? 'rgba(0,0,0,0.08)'
+                  :               `rgba(${hexToRgb(accentMid)},0.15)`,
+    legendTitleColor: isPureWhite ? '#333333'
+                    : isPureBlack ? '#aaaaaa'
+                    : isLight     ? hslStr(H1, 30, 40)
+                    :               hslStr(H1, 35, 50),
+    legendNameColor:  isPureWhite ? 'rgba(0,0,0,0.78)'
+                    : isPureBlack ? 'rgba(255,255,255,0.78)'
+                    : isLight     ? 'rgba(0,0,0,0.78)'
+                    :               `rgba(${hexToRgb(accentText)},0.88)`,
+    legendPosColor:   isPureWhite ? '#666666'
+                    : isPureBlack ? '#888888'
+                    : isLight     ? hslStr(H1, 20, 50)
+                    :               hslStr(H1, 25, 45),
+    tooltipBg:      isPureWhite ? '#ffffff'
+                  : isPureBlack ? '#111111'
+                  : isLight     ? '#ffffff'
+                  :               hslStr(H1, 35, 8),
+    tooltipBorder:  isPureWhite ? 'rgba(0,0,0,0.25)'
+                  : isPureBlack ? 'rgba(255,255,255,0.2)'
+                  : `rgba(${hexToRgb(accentMid)},0.4)`,
+    tooltipText:    isPureWhite ? '#111111'
+                  : isPureBlack ? '#eeeeee'
+                  : isLight     ? '#111111'
+                  :               accentText,
+    aspectConj:     isPureWhite ? 'rgba(0,0,0,0.55)'
+                  : isPureBlack ? 'rgba(200,200,200,0.6)'
+                  :               'rgba(255,220,50,0.7)',
+    aspectSext:     isPureWhite ? 'rgba(80,80,80,0.4)'
+                  : isPureBlack ? 'rgba(160,160,160,0.45)'
+                  : C2          ? `rgba(${hexToRgb(C2.light)},0.55)`
+                  :               `rgba(${hexToRgb(accentLight)},0.5)`,
+    aspectSq:       isPureWhite ? 'rgba(180,0,0,0.4)'
+                  : isPureBlack ? 'rgba(255,80,80,0.45)'
+                  :               'rgba(255,80,80,0.55)',
+    aspectTrine:    isPureWhite ? 'rgba(0,120,60,0.4)'
+                  : isPureBlack ? 'rgba(80,220,140,0.4)'
+                  :               'rgba(80,220,140,0.5)',
+    aspectOpp:      isPureWhite ? 'rgba(160,0,0,0.45)'
+                  : isPureBlack ? 'rgba(255,80,80,0.5)'
+                  :               'rgba(255,80,80,0.62)',
     isDark:         !isLight,
   }
 }
