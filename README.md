@@ -150,4 +150,14 @@ This project demonstrates:
 * [Donate via PayPal](https://www.paypal.com/paypalme/iakiwumi)
 
 Developed by Ida Akiwumi
-*Creative Technologist | Frontend Engineer | AI Integration Specialist
+* Creative Technologist | Frontend Engineer | AI Integration Specialist
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=idaakiwumi%2Fidaakiwumi&type=timeline&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=idaakiwumi/idaakiwumi&type=timeline&theme=dark&logscale&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=idaakiwumi/idaakiwumi&type=timeline&logscale&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=idaakiwumi/idaakiwumi&type=timeline&logscale&legend=top-left" />
+ </picture>
+</a>
